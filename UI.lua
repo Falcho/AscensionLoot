@@ -484,6 +484,27 @@ function UI:CreateLootRow(index)
         end
     end)
 
+    row.trade = createButton(row, "Trade", 65, 22)
+    row.trade:SetPoint("LEFT", row.award, "RIGHT", 4, 0)
+    row.trade:SetScript("OnClick", function()
+        if not row.item then
+            return
+        end
+
+        if row.item.status ~= "awaiting_trade" then
+            AL:Print(
+                "This item is not awaiting trade.",
+                1,
+                0.5,
+                0.2
+            )
+
+            return
+        end
+
+        AL.Trade:TryStart(row.item)
+    end)
+
     row.skip = createButton(row, "Skip", 62, 22)
     row.skip:SetPoint("TOPRIGHT", row, "TOPRIGHT", -12, -39)
     row.skip:SetScript("OnClick", function()
@@ -573,12 +594,44 @@ function UI:RefreshLoot()
                 "Demo item — rolling works, assigning is disabled"
             )
 
-        elseif item.status == "assigned" then
+        elseif item.status == "awaiting_trade" then
+            local tradeMessage = "Awaiting trade to "
+                .. tostring(item.winner or "Unknown")
+
+            if item.tradeStatus == "waiting_for_range" then
+                tradeMessage = tostring(item.winner)
+                    .. " is not in trade range"
+
+            elseif item.tradeStatus == "waiting_for_player" then
+                tradeMessage = tostring(item.winner)
+                    .. " is not currently in the group"
+
+            elseif item.tradeStatus == "waiting_for_combat" then
+                tradeMessage = "Waiting until combat ends"
+
+            elseif item.tradeStatus == "trade_requested" then
+                tradeMessage = "Trade requested with "
+                    .. tostring(item.winner)
+
+            elseif item.tradeStatus == "trade_cancelled" then
+                tradeMessage = "Trade cancelled — click Trade to retry"
+
+            elseif item.tradeStatus == "item_not_found" then
+                tradeMessage = "Assigned item not found in bags"
+            end
+
+            row.status:SetText(tradeMessage)
+
+        elseif item.status == "in_trade" then
             row.status:SetText(
-                string.format(
-                    "Assigned to %s — trade pending",
-                    item.winner or "Unknown"
-                )
+                "In trade window for "
+                    .. tostring(item.winner or "Unknown")
+            )
+
+        elseif item.status == "traded" then
+            row.status:SetText(
+                "Traded to "
+                    .. tostring(item.tradedTo or item.winner)
             )
 
         elseif item.holder then

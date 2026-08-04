@@ -20,6 +20,9 @@ local defaults = {
         minimumTrackedQuality = 4,
         trackRareBindOnPickup = true,
 
+        autoOpenTrade = true,
+        autoFillTrade = true,
+
         autoLootCoins = true,
         autoLootPoor = true,
         autoLootCommon = true,

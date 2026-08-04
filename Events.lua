@@ -11,6 +11,9 @@ eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 eventFrame:RegisterEvent("UI_ERROR_MESSAGE")
 eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+eventFrame:RegisterEvent("TRADE_SHOW")
+eventFrame:RegisterEvent("TRADE_CLOSED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -41,6 +44,18 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
         if AL.UI then AL.UI:RefreshAll() end
+    elseif event == "TRADE_SHOW" then
+        if AL.Trade then
+            AL.Trade:OnTradeShow()
+        end
+    elseif event == "TRADE_CLOSED" then
+        if AL.Trade then
+            AL.Trade:OnTradeClosed()
+        end 
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if AL.Trade then
+            AL.Trade:OnCombatEnded()
+        end
     end
 end)
 
@@ -54,6 +69,7 @@ local function showHelp()
     AL:Print("/al — toggle the main frame")
     AL:Print("/al loot | reserves | import | history | settings")
     AL:Print("/al finish | cancel — control the active roll")
+    AL:Print("/al trade — trade the next awarded item")
     AL:Print("/al clear — clear imported soft reserves")
     AL:Print("/al demo — load a safe UI demo")
 end

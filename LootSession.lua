@@ -71,7 +71,7 @@ end
 function Session:Assign(entry, winner, reason, winningRoll)
     if not entry or not winner then return false end
 
-    entry.status = "assigned"
+    entry.status = "awaiting_trade"
     entry.winner = winner
     entry.reason = reason or "Manual"
     entry.winningRoll = winningRoll
@@ -97,6 +97,10 @@ function Session:Assign(entry, winner, reason, winningRoll)
 
     if AL.UI then
         AL.UI:RefreshAll()
+    end
+
+    if AL.Trade then
+        AL.Trade:Queue(entry)
     end
 
     return true

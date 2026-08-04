@@ -11,6 +11,7 @@ Json.lua
 ItemUtils.lua
 SoftReserve.lua
 LootSession.lua
+TradeManager.lua
 RollManager.lua
 LootManager.lua
 BagHooks.lua
