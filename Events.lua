@@ -7,6 +7,7 @@ eventFrame:RegisterEvent("LOOT_OPENED")
 eventFrame:RegisterEvent("LOOT_CLOSED")
 eventFrame:RegisterEvent("LOOT_SLOT_CLEARED")
 eventFrame:RegisterEvent("LOOT_SLOT_CHANGED")
+eventFrame:RegisterEvent("BAG_UPDATE")
 eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 eventFrame:RegisterEvent("UI_ERROR_MESSAGE")
 eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
@@ -24,7 +25,16 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         AL.SoftReserve:LoadFromDatabase()
     elseif event == "PLAYER_LOGIN" then
         AL.UI:Create()
-        AL:Print("Loaded v" .. AL.version .. ". Type /al for the loot frame.")
+
+        if AL.BagHooks then
+            AL.BagHooks:Initialize()
+        end
+
+        AL:Print(
+            "Loaded v"
+                .. AL.version
+                .. ". Type /al for the loot frame."
+        )
     elseif event == "LOOT_OPENED" then
         AL.Loot:OnOpened()
     elseif event == "LOOT_CLOSED" then
@@ -34,6 +44,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         AL.Loot:OnSlotCleared(slot)
     elseif event == "LOOT_SLOT_CHANGED" then
         AL.Loot:Refresh()
+    elseif event == "BAG_UPDATE" then
+        if AL.BagHooks then
+            AL.BagHooks:OnBagUpdate()
+        end
     elseif event == "CHAT_MSG_SYSTEM" then
         local systemMessage = select(1, ...)
 
@@ -67,10 +81,22 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
-eventFrame:SetScript("OnUpdate", function(self, elapsed)
-    if AL.Roll then AL.Roll:OnUpdate(elapsed) end
-    if AL.Loot then AL.Loot:OnUpdate() end
-end)
+eventFrame:SetScript(
+    "OnUpdate",
+    function(self, elapsed)
+        if AL.Roll then
+            AL.Roll:OnUpdate(elapsed)
+        end
+
+        if AL.Loot then
+            AL.Loot:OnUpdate()
+        end
+
+        if AL.BagHooks then
+            AL.BagHooks:OnUpdate()
+        end
+    end
+)
 
 local function showHelp()
     AL:Print("Commands:")

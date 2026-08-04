@@ -27,6 +27,17 @@ function Session:AddCollected(item, holderName)
         quality = item.quality or 0,
         bindType = item.bindType,
 
+        -- Preserve the last known bag location. The trade
+        -- manager still searches all bags if the item moves.
+        bag = item.bag,
+        bagSlot = item.bagSlot,
+
+        -- Records whether this came from Master Loot,
+        -- automatic bag detection or an Alt-click fallback.
+        registrationSource =
+            item.registrationSource
+            or item.source,
+
         holder = holderName,
         collectedAt = time(),
 
@@ -89,22 +100,70 @@ function Session:GetUnassignedCopies(
     return result
 end
 
-function Session:FindFirstUnassigned(itemID, holderName)
-    local normalizedHolder = AL:NormalizeName(holderName)
+function Session:FindFirstUnassigned(
+    itemID,
+    holderName
+)
+    local wantedItemID =
+        tonumber(itemID)
 
-    for _, entry in ipairs(self:GetItems()) do
-        if entry.id == tonumber(itemID)
+    local normalizedHolder =
+        holderName
+        and AL:NormalizeName(holderName)
+        or nil
+
+    for _, entry in ipairs(
+        self:GetItems() or {}
+    ) do
+        local holderMatches =
+            not normalizedHolder
+            or AL:NormalizeName(entry.holder)
+                == normalizedHolder
+
+        if tonumber(entry.id) == wantedItemID
             and entry.status == "unassigned"
-            and (
-                not normalizedHolder
-                or AL:NormalizeName(entry.holder) == normalizedHolder
-            )
+            and holderMatches
         then
             return entry
         end
     end
 
     return nil
+end
+
+function Session:CountHeldCopies(
+    itemID,
+    holderName
+)
+    local wantedItemID =
+        tonumber(itemID)
+
+    local normalizedHolder =
+        holderName
+        and AL:NormalizeName(holderName)
+        or nil
+
+    local count = 0
+
+    for _, entry in ipairs(
+        self:GetItems() or {}
+    ) do
+        local holderMatches =
+            not normalizedHolder
+            or AL:NormalizeName(entry.holder)
+                == normalizedHolder
+
+        -- Traded entries no longer represent items
+        -- that should still be in the holder's bags.
+        if tonumber(entry.id) == wantedItemID
+            and entry.status ~= "traded"
+            and holderMatches
+        then
+            count = count + 1
+        end
+    end
+
+    return count
 end
 
 function Session:Assign(entry, winner, reason, winningRoll,deferTradeStart)

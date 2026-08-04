@@ -589,6 +589,21 @@ function UI:CreateLootRow(index)
             return
         end
 
+        -- Demo and temporary loot-window items may not
+        -- have a status yet, so nil is also allowed.
+        if row.item.status
+            and row.item.status ~= "unassigned"
+        then
+            AL:Print(
+                "Only unassigned items can be skipped.",
+                1,
+                0.5,
+                0.2
+            )
+
+            return
+        end
+
         row.item.skipped = true
         UI:RefreshLoot()
     end)
@@ -670,9 +685,16 @@ function UI:RefreshLoot()
 
     -- Show items collected for later distribution.
     if AL.LootSession then
-        for _, item in ipairs(AL.LootSession:GetItems() or {}) do
-            if not item.skipped then
-                table.insert(visibleItems, item)
+        for _, item in ipairs(
+            AL.LootSession:GetItems() or {}
+        ) do
+            if not item.skipped
+                and item.status ~= "traded"
+            then
+                table.insert(
+                    visibleItems,
+                    item
+                )
             end
         end
     end
@@ -687,6 +709,13 @@ function UI:RefreshLoot()
     for index, item in ipairs(visibleItems) do
         local row = self.lootRows[index] or self:CreateLootRow(index)
         row.item = item
+        if item.status
+            and item.status ~= "unassigned"
+        then
+            row.skip:Disable()
+        else
+            row.skip:Enable()
+        end
         row.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
         row.name:SetText(item.link or item.name or ("Item " .. tostring(item.id)))
 

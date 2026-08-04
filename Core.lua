@@ -27,6 +27,7 @@ local defaults = {
 
         minimumTrackedQuality = 4,
         trackRareBindOnPickup = true,
+        trackEligibleBagLoot = true,
 
         autoOpenTrade = true,
         autoFillTrade = true,
