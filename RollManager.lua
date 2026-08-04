@@ -372,7 +372,7 @@ function Roll:BeginTie(tiedResults)
         result.entry.tieEntries = {}
     local names = {}
 
-    for _, result in ipairs(tiedResultsRoll = nil
+    for _, result in ipairs(tiedResultsRoll) = nil
 
         candidateEntries[
             result.normalizedName
