@@ -7,17 +7,22 @@ Loot.items = {}
 Loot.pendingAward = nil
 Loot.confirmData = nil
 Loot.autoQueue = {}
+Loot.collectionQueue = {}
+Loot.pendingCollection = nil
 Loot.nextAutoAction = 0
 Loot.isOpen = false
-Loot.pendingCollection = nil
-Loot.collectionQueue = {}
 
 local function lootSlotItem(slot)
-    local icon, name, quantity, quality, locked = GetLootSlotInfo(slot)
-    local link = GetLootSlotLink(slot)
-    if not link then return nil end
+    local icon, name, quantity, quality, locked =
+        GetLootSlotInfo(slot)
 
-    return {
+    local link = GetLootSlotLink(slot)
+
+    if not link then
+        return nil
+    end
+
+    local item = {
         source = "loot",
         slot = slot,
         id = AL:GetItemID(link),

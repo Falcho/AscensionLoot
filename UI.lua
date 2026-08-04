@@ -514,9 +514,11 @@ function UI:CreateLootRow(index)
 end
 
 function UI:RefreshLoot()
-    if not self.lootFrame then
+    if not self.lootFrame or not AL.Loot then
         return
     end
+
+    local visibleItems = {}
 
     local visibleItems = {}
 
