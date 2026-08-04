@@ -500,39 +500,62 @@ function UI:CreateLootRow(index)
     row.reserves:SetJustifyH("LEFT")
     row.reserves:SetWordWrap(false)
 
-    row.roll = createButton(row, "Roll", 48, 18)
-    row.roll:SetPoint("TOPRIGHT", row, "TOPRIGHT", -166, 0)
-    row.roll:SetScript("OnClick", function() if row.item then AL.Roll:StartForItem(row.item) end end)
-
-    row.award = createButton(row, "Award", 50, 18)
-    row.award:SetPoint("LEFT", row.roll, "RIGHT", 4, 0)
-    row.award:SetScript("OnClick", function()
-            if not row.item then
-                return
-            end
-
-            local active = AL.Roll.active
-
-            if active
-                and active.state == "finished"
-                and AL:GetItemKey(active.item)
-                    == AL:GetItemKey(row.item)
-            then
-                AL.Loot:AwardActiveWinners(
-                    row.item
-                )
-            else
-                AL.Loot:DirectAward(
-                    row.item
-                )
-            end
-        end
+    -- Roll button
+    row.roll = createButton(
+        row,
+        "Roll",
+        48,
+        18
     )
 
-    row.trade = createButton(row, "Trade", 50, 18)
-    row.trade:SetPoint("LEFT", row.award, "RIGHT", 4, 0)
+    row.roll:SetScript("OnClick", function()
+        if row.item and AL.Roll then
+            AL.Roll:StartForItem(row.item)
+        end
+    end)
+
+    -- Award button
+    row.award = createButton(
+        row,
+        "Award",
+        52,
+        18
+    )
+
+    row.award:SetScript("OnClick", function()
+        if not row.item or not AL.Loot then
+            return
+        end
+
+        local active =
+            AL.Roll and AL.Roll.active
+
+        if active
+            and active.state == "finished"
+            and active.item
+            and AL:GetItemKey(active.item)
+                == AL:GetItemKey(row.item)
+        then
+            AL.Loot:AwardActiveWinners(
+                row.item
+            )
+        else
+            AL.Loot:DirectAward(
+                row.item
+            )
+        end
+    end)
+
+    -- Trade button
+    row.trade = createButton(
+        row,
+        "Trade",
+        50,
+        18
+    )
+
     row.trade:SetScript("OnClick", function()
-        if not row.item then
+        if not row.item or not AL.Trade then
             return
         end
 
@@ -547,14 +570,72 @@ function UI:CreateLootRow(index)
             return
         end
 
-        AL.Trade:TryStart(row.item)
+        AL.Trade:TryStart(
+            row.item
+        )
     end)
 
-    row.skip = createButton(row, "Skip", 44, 18)
-    row.skip:SetPoint("TOPRIGHT", row, "TOPRIGHT", -12, -39)
+    -- Skip button
+    -- Same width as Trade so they align exactly.
+    row.skip = createButton(
+        row,
+        "Skip",
+        50,
+        18
+    )
+
     row.skip:SetScript("OnClick", function()
-        if row.item then row.item.skipped = true UI:RefreshLoot() end
+        if row.item and AL.Loot then
+            AL.Loot:Skip(
+                row.item
+            )
+        end
     end)
+
+    --------------------------------------------------
+    -- Button positioning
+    --------------------------------------------------
+
+    -- Trade is anchored to the upper-right corner.
+    row.trade:ClearAllPoints()
+    row.trade:SetPoint(
+        "TOPRIGHT",
+        row,
+        "TOPRIGHT",
+        -8,
+        -4
+    )
+
+    -- Award sits immediately to the left of Trade.
+    row.award:ClearAllPoints()
+    row.award:SetPoint(
+        "RIGHT",
+        row.trade,
+        "LEFT",
+        -4,
+        0
+    )
+
+    -- Roll sits immediately to the left of Award.
+    row.roll:ClearAllPoints()
+    row.roll:SetPoint(
+        "RIGHT",
+        row.award,
+        "LEFT",
+        -4,
+        0
+    )
+
+    -- Skip sits directly underneath Trade.
+    -- TOPRIGHT to BOTTOMRIGHT keeps their right edges aligned.
+    row.skip:ClearAllPoints()
+    row.skip:SetPoint(
+        "TOPRIGHT",
+        row.trade,
+        "BOTTOMRIGHT",
+        0,
+        -2
+    )
 
     row:SetScript("OnClick", function()
         if not row.item then
