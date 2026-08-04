@@ -585,11 +585,12 @@ function UI:CreateLootRow(index)
     )
 
     row.skip:SetScript("OnClick", function()
-        if row.item and AL.Loot then
-            AL.Loot:Skip(
-                row.item
-            )
+        if not row.item then
+            return
         end
+
+        row.item.skipped = true
+        UI:RefreshLoot()
     end)
 
     --------------------------------------------------
