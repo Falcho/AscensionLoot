@@ -1,5 +1,14 @@
 local AL = AscensionLoot
 
+local function samePlayerName(left, right)
+    if not left or not right then
+        return false
+    end
+
+    return AL:NormalizeName(left)
+        == AL:NormalizeName(right)
+end
+
 AL.LootSession = AL.LootSession or {}
 local Session = AL.LootSession
 
@@ -166,14 +175,74 @@ function Session:CountHeldCopies(
     return count
 end
 
-function Session:Assign(entry, winner, reason, winningRoll,deferTradeStart)
-    if not entry or not winner then return false end
+function Session:MarkKept(entry, holderName)
+    if not entry then
+        return false
+    end
 
-    entry.status = "awaiting_trade"
+    local keptBy =
+        holderName
+        or entry.winner
+        or entry.holder
+        or UnitName("player")
+
+    entry.status = "kept"
+    entry.tradeStatus = "not_required"
+    entry.keptAt = time()
+    entry.keptBy = keptBy
+    entry.tradeSlot = nil
+    entry.tradeError = nil
+
+    AL:Print(string.format(
+        "%s is being kept by %s. No trade is required.",
+        entry.link or entry.name or "Item",
+        keptBy or "Unknown"
+    ))
+
+    if AL.UI then
+        AL.UI:RefreshAll()
+    end
+
+    return true
+end
+
+function Session:Assign(
+    entry,
+    winner,
+    reason,
+    winningRoll,
+    deferTradeStart
+)
+    if not entry or not winner then
+        return false
+    end
+
+    local holderName =
+        entry.holder
+        or UnitName("player")
+
+    local winnerIsHolder =
+        samePlayerName(
+            winner,
+            holderName
+        )
+
     entry.winner = winner
     entry.reason = reason or "Manual"
     entry.winningRoll = winningRoll
     entry.assignedAt = time()
+
+    if winnerIsHolder then
+        entry.status = "kept"
+        entry.tradeStatus = "not_required"
+        entry.keptAt = time()
+        entry.keptBy = winner
+        entry.tradeError = nil
+        entry.tradeSlot = nil
+    else
+        entry.status = "awaiting_trade"
+        entry.tradeStatus = "queued"
+    end
 
     AL:AddHistory({
         itemID = entry.id,
@@ -182,23 +251,42 @@ function Session:Assign(entry, winner, reason, winningRoll,deferTradeStart)
         reason = entry.reason,
         winningRoll = winningRoll,
         masterLooter = UnitName("player"),
-        status = "assigned",
+
+        status =
+            winnerIsHolder
+            and "kept"
+            or "assigned",
     })
 
     if AL.db.settings.announceAssignments then
-        AL:Announce(string.format(
-            "%s assigned to %s. Trade pending.",
-            entry.link or entry.name,
-            winner
-        ))
+        if winnerIsHolder then
+            AL:Announce(string.format(
+                "%s assigned to %s. No trade required.",
+                entry.link or entry.name,
+                winner
+            ))
+        else
+            AL:Announce(string.format(
+                "%s assigned to %s. Trade pending.",
+                entry.link or entry.name,
+                winner
+            ))
+        end
     end
 
     if AL.UI then
         AL.UI:RefreshAll()
     end
 
-    if AL.Trade then
-        AL.Trade:Queue(entry, deferTradeStart)
+    -- Only queue an actual trade when the winner
+    -- is different from the item holder.
+    if not winnerIsHolder
+        and AL.Trade
+    then
+        AL.Trade:Queue(
+            entry,
+            deferTradeStart
+        )
     end
 
     return true

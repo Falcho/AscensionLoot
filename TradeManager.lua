@@ -199,14 +199,26 @@ function Trade:TryStart(entry)
     end
 
     if unit == "player" then
-        entry.tradeStatus = "not_required"
+        if AL.LootSession
+            and AL.LootSession.MarkKept
+        then
+            AL.LootSession:MarkKept(
+                entry,
+                entry.winner
+            )
+        else
+            entry.status = "kept"
+            entry.tradeStatus = "not_required"
+            entry.keptAt = time()
+            entry.keptBy = entry.winner
+            entry.tradeSlot = nil
 
-        AL:Print(
-            entry.winner
-                .. " is the current loot holder; no trade is required."
-        )
+            if AL.UI then
+                AL.UI:RefreshAll()
+            end
+        end
 
-        return false
+        return true
     end
 
     if not self:IsUnitInTradeRange(unit) then

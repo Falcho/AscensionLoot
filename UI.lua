@@ -690,6 +690,7 @@ function UI:RefreshLoot()
         ) do
             if not item.skipped
                 and item.status ~= "traded"
+                and item.status ~= "kept"
             then
                 table.insert(
                     visibleItems,
