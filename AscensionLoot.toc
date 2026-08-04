@@ -1,0 +1,18 @@
+## Interface: 30300
+## Title: Ascension Loot
+## Notes: Master-loot, rolling and BisBeard soft reserves for 3.3.5a
+## Author: Falcho
+## Version: 0.2.0
+## SavedVariables: AscensionLootDB
+
+Core.lua
+Base64.lua
+Json.lua
+ItemUtils.lua
+SoftReserve.lua
+LootSession.lua
+RollManager.lua
+LootManager.lua
+BagHooks.lua
+UI.lua
+Events.lua
