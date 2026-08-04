@@ -5,6 +5,14 @@ AL.name = "Ascension Loot"
 AL.version = "0.2.0"
 AL.prefix = "|cff33ff99Ascension Loot:|r "
 
+local chatQueue = {}
+local chatFrame = CreateFrame("Frame")
+local lastChatSentAt = 0
+local CHAT_MESSAGE_INTERVAL = 0.85
+local CHAT_MESSAGE_MAX_BYTES = 220
+
+chatFrame:Hide()
+
 local defaults = {
     settings = {
         announceRolls = true,
@@ -144,20 +152,6 @@ function AL:ShallowCopy(tbl)
 end
 
 function AL:IsInRaid()
-    return GetNumRaidMembers and GetNumRaidMembers() > 0
-end
-
-function AL:IsInParty()
-    return GetNumPartyMembers and GetNumPartyMembers() > 0
-end
-
-function AL:GetGroupChannel()
-    if self:IsInRaid() then return "RAID" end
-    if self:IsInParty() then return "PARTY" end
-    return nil
-end
-
-function AL:IsInRaid()
     local raidCount =
         GetNumRaidMembers
         and GetNumRaidMembers()
@@ -173,6 +167,18 @@ function AL:IsInParty()
         or 0
 
     return partyCount > 0
+end
+
+function AL:GetGroupChannel()
+    if self:IsInRaid() then
+        return "RAID"
+    end
+
+    if self:IsInParty() then
+        return "PARTY"
+    end
+
+    return nil
 end
 
 function AL:CanSendRaidWarning()
@@ -191,29 +197,122 @@ function AL:CanSendRaidWarning()
     return isLeader or isAssistant
 end
 
+function AL:SanitizeChatText(text)
+    if type(text) ~= "string" then
+        return ""
+    end
+
+    -- Convert a full WoW hyperlink into only its visible label.
+    -- Example: |Hitem:123|h[Item]|h becomes [Item].
+    text = text:gsub("|H.-|h(.-)|h", "%1")
+
+    -- Remove color escape sequences which are useful locally but can
+    -- cause server chat messages to be rejected on some 3.3.5 clients.
+    text = text:gsub("|c%x%x%x%x%x%x%x%x", "")
+    text = text:gsub("|r", "")
+
+    -- Chat messages must stay on one line.
+    text = text:gsub("[\r\n]+", " ")
+
+    return self:Trim(text)
+end
+
+local function splitChatText(text)
+    local parts = {}
+
+    while #text > CHAT_MESSAGE_MAX_BYTES do
+        local cut = CHAT_MESSAGE_MAX_BYTES
+
+        while cut > 1 and text:sub(cut, cut) ~= " " do
+            cut = cut - 1
+        end
+
+        if cut <= 1 then
+            cut = CHAT_MESSAGE_MAX_BYTES
+        end
+
+        local part = AL:Trim(text:sub(1, cut))
+
+        if part ~= "" then
+            table.insert(parts, part)
+        end
+
+        text = AL:Trim(text:sub(cut + 1))
+    end
+
+    if text ~= "" then
+        table.insert(parts, text)
+    end
+
+    return parts
+end
+
+local function processChatQueue()
+    if #chatQueue == 0 then
+        chatFrame:Hide()
+        return
+    end
+
+    local now = GetTime()
+
+    if now - lastChatSentAt < CHAT_MESSAGE_INTERVAL then
+        return
+    end
+
+    local entry = table.remove(chatQueue, 1)
+
+    if entry and entry.text and entry.chatType then
+        SendChatMessage(entry.text, entry.chatType)
+        lastChatSentAt = now
+    end
+
+    if #chatQueue == 0 then
+        chatFrame:Hide()
+    end
+end
+
+chatFrame:SetScript("OnUpdate", processChatQueue)
+
+function AL:QueueChatMessage(text, chatType)
+    local safeText = self:SanitizeChatText(text)
+
+    if safeText == "" or not chatType then
+        return
+    end
+
+    for _, part in ipairs(splitChatText(safeText)) do
+        table.insert(chatQueue, {
+            text = part,
+            chatType = chatType,
+        })
+    end
+
+    chatFrame:Show()
+    processChatQueue()
+end
+
 function AL:Announce(text)
     if type(text) ~= "string" or text == "" then
         return
     end
 
     if self:IsInRaid() then
+        local chatType = "RAID"
+
         if self:CanSendRaidWarning() then
-            SendChatMessage(
-                text,
-                "RAID_WARNING"
-            )
-        else
-            -- Only leaders and assistants can normally use /rw.
-            SendChatMessage(
-                text,
-                "RAID"
-            )
+            chatType = "RAID_WARNING"
         end
 
+        self:QueueChatMessage(text, chatType)
         return
     end
 
-    -- Keep testing output local when solo.
+    if self:IsInParty() then
+        self:QueueChatMessage(text, "PARTY")
+        return
+    end
+
+    -- Keep hyperlinks clickable in local test output.
     self:Print(text)
 end
 
@@ -223,20 +322,12 @@ function AL:AnnounceTrade(text)
     end
 
     if self:IsInRaid() then
-        SendChatMessage(
-            text,
-            "RAID"
-        )
-
+        self:QueueChatMessage(text, "RAID")
         return
     end
 
     if self:IsInParty() then
-        SendChatMessage(
-            text,
-            "PARTY"
-        )
-
+        self:QueueChatMessage(text, "PARTY")
         return
     end
 

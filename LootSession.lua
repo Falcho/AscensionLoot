@@ -183,7 +183,3 @@ function Session:Clear()
     end
 end
 
-function Session:Clear()
-    AL.db.lootSession.items = {}
-    if AL.UI then AL.UI:RefreshAll() end
-end

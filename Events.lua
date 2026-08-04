@@ -67,7 +67,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
-eventFrame:SetScript("OnUpdate", function()
+eventFrame:SetScript("OnUpdate", function(self, elapsed)
     if AL.Roll then AL.Roll:OnUpdate(elapsed) end
     if AL.Loot then AL.Loot:OnUpdate() end
 end)
@@ -99,6 +99,10 @@ SlashCmdList["ASCENSIONLOOT"] = function(message)
         AL:Print("Soft-reserve data cleared.")
     elseif command == "demo" then
         AL.Loot:LoadDemo()
+    elseif command == "trade" then
+        if AL.Trade then
+            AL.Trade:TryStart()
+        end
     elseif command == "help" then
         showHelp()
     else
