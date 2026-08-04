@@ -145,6 +145,44 @@ function Session:Assign(entry, winner, reason, winningRoll,deferTradeStart)
     return true
 end
 
+function Session:MarkTraded(entry, recipient)
+    if not entry then
+        return false
+    end
+
+    entry.status = "traded"
+    entry.tradeStatus = "completed"
+    entry.tradedAt = time()
+    entry.tradedTo = recipient or entry.winner
+    entry.tradeSlot = nil
+
+    local tradeMessage = string.format(
+        "%s has been traded to %s.",
+        entry.link or entry.name or "Item",
+        entry.tradedTo or entry.winner or "Unknown"
+    )
+
+    if AL.AnnounceTrade then
+        AL:AnnounceTrade(tradeMessage)
+    else
+        AL:Print(tradeMessage)
+    end
+
+    if AL.UI then
+        AL.UI:RefreshAll()
+    end
+
+    return true
+end
+
+function Session:Clear()
+    AL.db.lootSession.items = {}
+
+    if AL.UI then
+        AL.UI:RefreshAll()
+    end
+end
+
 function Session:Clear()
     AL.db.lootSession.items = {}
     if AL.UI then AL.UI:RefreshAll() end

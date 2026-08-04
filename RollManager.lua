@@ -383,6 +383,7 @@ function Roll:BeginTie(tiedResults)
         tonumber(AL.db.settings.rollDuration) or 12
 
     active.state = "tie"
+    active.countdownAnnounced = {}
 
     active.tie = {
         category = category,
@@ -428,6 +429,7 @@ function Roll:StartForItem(item)
         label = "Combined Roll",
         state = "rolling",
         copyCount = copyCount,
+        countdownAnnounced = {},
 
         reserveMap =
             self:BuildReserveMap(item.id),
@@ -635,7 +637,7 @@ function Roll:Finish()
         active.message = "No valid rolls"
 
         AL:Announce(string.format(
-            "No valid rolls for %s.",
+            "Rolling has finished. No valid rolls for %s.",
             active.item.link
                 or active.item.name
         ))
@@ -706,10 +708,19 @@ function Roll:Finish()
         #winners == 1 and "" or "s"
     )
 
+    local winnerWord
+
+    if #winners == 1 then
+        winnerWord = "winner"
+    else
+        winnerWord = "winners"
+    end
+
     AL:Announce(string.format(
-        "%s winners: %s.",
+        "Rolling has finished, %s %s: %s.",
         active.item.link
             or active.item.name,
+        winnerWord,
         table.concat(winnerTexts, ", ")
     ))
 
@@ -786,20 +797,42 @@ function Roll:OnUpdate()
         return
     end
 
-    if (
+    local isRunning =
         active.state == "rolling"
         or active.state == "tie"
-    )
-        and GetTime() >= active.endsAt
-    then
-        self:Finish()
 
-    elseif (
-        active.state == "rolling"
-        or active.state == "tie"
-    )
-        and AL.UI
+    if not isRunning then
+        return
+    end
+
+    local remaining =
+        math.max(
+            0,
+            math.ceil(
+                active.endsAt - GetTime()
+            )
+        )
+
+    active.countdownAnnounced =
+        active.countdownAnnounced or {}
+
+    if remaining >= 1
+        and remaining <= 3
+        and not active.countdownAnnounced[remaining]
     then
+        active.countdownAnnounced[remaining] = true
+
+        AL:Announce(
+            tostring(remaining)
+        )
+    end
+
+    if GetTime() >= active.endsAt then
+        self:Finish()
+        return
+    end
+
+    if AL.UI then
         AL.UI:RefreshRollTimer()
     end
 end

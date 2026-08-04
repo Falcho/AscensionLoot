@@ -13,6 +13,7 @@ eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 eventFrame:RegisterEvent("TRADE_SHOW")
 eventFrame:RegisterEvent("TRADE_CLOSED")
+eventFrame:RegisterEvent("UI_INFO_MESSAGE")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
@@ -55,6 +56,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if AL.Trade then
             AL.Trade:OnTradeClosed()
         end 
+    elseif event == "UI_INFO_MESSAGE" then
+        if AL.Trade then
+            AL.Trade:OnUIInfoMessage(...)
+        end    
     elseif event == "PLAYER_REGEN_ENABLED" then
         if AL.Trade then
             AL.Trade:OnCombatEnded()

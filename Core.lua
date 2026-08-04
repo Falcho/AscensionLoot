@@ -157,18 +157,90 @@ function AL:GetGroupChannel()
     return nil
 end
 
-function AL:Announce(message)
-    if not self.db or not self.db.settings.announceRolls then
-        self:Print(message)
+function AL:IsInRaid()
+    local raidCount =
+        GetNumRaidMembers
+        and GetNumRaidMembers()
+        or 0
+
+    return raidCount > 0
+end
+
+function AL:IsInParty()
+    local partyCount =
+        GetNumPartyMembers
+        and GetNumPartyMembers()
+        or 0
+
+    return partyCount > 0
+end
+
+function AL:CanSendRaidWarning()
+    if not self:IsInRaid() then
+        return false
+    end
+
+    local isLeader =
+        IsRaidLeader
+        and IsRaidLeader()
+
+    local isAssistant =
+        IsRaidOfficer
+        and IsRaidOfficer()
+
+    return isLeader or isAssistant
+end
+
+function AL:Announce(text)
+    if type(text) ~= "string" or text == "" then
         return
     end
 
-    local channel = self:GetGroupChannel()
-    if channel and SendChatMessage then
-        SendChatMessage(message, channel)
-    else
-        self:Print(message)
+    if self:IsInRaid() then
+        if self:CanSendRaidWarning() then
+            SendChatMessage(
+                text,
+                "RAID_WARNING"
+            )
+        else
+            -- Only leaders and assistants can normally use /rw.
+            SendChatMessage(
+                text,
+                "RAID"
+            )
+        end
+
+        return
     end
+
+    -- Keep testing output local when solo.
+    self:Print(text)
+end
+
+function AL:AnnounceTrade(text)
+    if type(text) ~= "string" or text == "" then
+        return
+    end
+
+    if self:IsInRaid() then
+        SendChatMessage(
+            text,
+            "RAID"
+        )
+
+        return
+    end
+
+    if self:IsInParty() then
+        SendChatMessage(
+            text,
+            "PARTY"
+        )
+
+        return
+    end
+
+    self:Print(text)
 end
 
 function AL:IsGroupMember(name)

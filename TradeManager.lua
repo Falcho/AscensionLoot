@@ -7,6 +7,7 @@ Trade.requestedEntry = nil
 Trade.requestedWinner = nil
 Trade.tradeTarget = nil
 Trade.tradeOpen = false
+Trade.tradeCompleted = false
 Trade.filledEntries = {}
 Trade.pendingVerification = nil
 
@@ -427,6 +428,7 @@ end
 
 function Trade:OnTradeShow()
     self.tradeOpen = true
+    self.tradeCompleted = false
     self.tradeTarget = self:GetTradeTarget()
 
     if not self.tradeTarget then
@@ -461,6 +463,22 @@ function Trade:OnTradeShow()
     end
 
     self:FillTradeWindow(self.tradeTarget)
+end
+
+function Trade:OnUIInfoMessage(...)
+    local tradeCompleteText =
+        ERR_TRADE_COMPLETE or "Trade complete."
+
+    for index = 1, select("#", ...) do
+        local value = select(index, ...)
+
+        if type(value) == "string"
+            and value == tradeCompleteText
+        then
+            self.tradeCompleted = true
+            return
+        end
+    end
 end
 
 function Trade:StartVerificationTimer()
@@ -515,21 +533,13 @@ function Trade:VerifyClosedTrade()
         return
     end
 
+    local tradeCompleted =
+        self.tradeCompleted == true
+
     for _, value in ipairs(verification) do
         local entry = value.entry
-        local currentLink =
-            GetContainerItemLink(value.bag, value.bagSlot)
 
-        local itemReturned =
-            currentLink
-            and tonumber(AL:GetItemID(currentLink))
-                == tonumber(entry.id)
-
-        if itemReturned then
-            entry.status = "awaiting_trade"
-            entry.tradeStatus = "trade_cancelled"
-            entry.tradeSlot = nil
-        else
+        if tradeCompleted then
             if AL.LootSession
                 and AL.LootSession.MarkTraded
             then
@@ -541,10 +551,20 @@ function Trade:VerifyClosedTrade()
                 entry.status = "traded"
                 entry.tradeStatus = "completed"
                 entry.tradedAt = time()
+                entry.tradedTo =
+                    self.tradeTarget or entry.winner
+                entry.tradeSlot = nil
             end
+        else
+            -- Trade was cancelled, declined or closed
+            -- without completing.
+            entry.status = "awaiting_trade"
+            entry.tradeStatus = "trade_cancelled"
+            entry.tradeSlot = nil
         end
     end
 
+    self.tradeCompleted = false
     self.requestedEntry = nil
     self.requestedWinner = nil
     self.tradeTarget = nil
