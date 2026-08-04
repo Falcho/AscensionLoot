@@ -57,6 +57,10 @@ local localizedRollPattern =
     buildLocalizedRollPattern()
 
 local function parseRollMessage(message)
+    if type(message) ~= "string" then
+        return nil
+    end
+
     local player, roll, minimum, maximum =
         message:match(localizedRollPattern)
 
@@ -520,6 +524,9 @@ function Roll:HandleTieRoll(
 end
 
 function Roll:HandleSystemMessage(message)
+    if type(message) ~= "string" then
+        return
+    end
     local active = self.active
 
     if not active then

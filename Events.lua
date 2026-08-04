@@ -34,8 +34,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "LOOT_SLOT_CHANGED" then
         AL.Loot:Refresh()
     elseif event == "CHAT_MSG_SYSTEM" then
-        if AL.Roll then
-            AL.Roll:HandleSystemMessage(message)
+        local systemMessage = select(1, ...)
+
+        if AL.Roll and type(systemMessage) == "string" then
+            AL.Roll:HandleSystemMessage(systemMessage)
         end
     elseif event == "UI_ERROR_MESSAGE" then
         local message = ...
