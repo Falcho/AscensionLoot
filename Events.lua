@@ -34,8 +34,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "LOOT_SLOT_CHANGED" then
         AL.Loot:Refresh()
     elseif event == "CHAT_MSG_SYSTEM" then
-        local message = ...
-        AL.Roll:HandleSystemMessage(message)
+        if AL.Roll then
+            AL.Roll:HandleSystemMessage(message)
+        end
     elseif event == "UI_ERROR_MESSAGE" then
         local message = ...
         if AL.Loot.pendingAward then
@@ -60,7 +61,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 end)
 
 eventFrame:SetScript("OnUpdate", function()
-    if AL.Roll then AL.Roll:OnUpdate() end
+    if AL.Roll then AL.Roll:OnUpdate(elapsed) end
     if AL.Loot then AL.Loot:OnUpdate() end
 end)
 

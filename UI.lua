@@ -694,9 +694,12 @@ function UI:RefreshLoot()
 end
 
 function UI:RefreshRollTimer()
-    if not self.rollPanel
-        or not AL.Roll.active
-    then
+    if not self.rollPanel or not AL.Roll then
+        return
+    end
+
+    if not AL.Roll.active then
+        self.rollPanel.timer:SetText("")
         return
     end
 
@@ -724,6 +727,24 @@ end
 
 function UI:RefreshRoll()
     if not self.rollPanel then
+        return
+    end
+
+    if not AL.Roll then
+        self.rollPanel.title:SetText(
+            "RollManager failed to load"
+        )
+
+        self.rollPanel.timer:SetText("")
+
+        self.rollPanel.results:SetText(
+            "Check the Lua errors in RollManager.lua."
+        )
+
+        self.rollPanel.finish:Disable()
+        self.rollPanel.cancel:Disable()
+        self.rollPanel.award:Disable()
+
         return
     end
 

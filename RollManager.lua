@@ -234,20 +234,15 @@ function Roll:GetSortedResults()
 
     local results = {}
 
-    for normalizedName, playerEntries
-        in pairs(active.rollsByPlayer or {})
-    do
+    for normalizedName, playerEntries in pairs(active.rollsByPlayer or {}) do
         local selectedEntry = nil
 
-        -- Only display the player's highest-priority
-        -- submitted category.
         for _, category in ipairs({
             "SR",
             "MS",
             "OS",
         }) do
-            local entry =
-                playerEntries[category]
+            local entry = playerEntries[category]
 
             if entry and getBestRoll(entry.rolls) then
                 selectedEntry = entry
@@ -260,19 +255,17 @@ function Roll:GetSortedResults()
                 normalizedName = normalizedName,
                 name = selectedEntry.name,
                 category = selectedEntry.category,
+
                 categoryLabel =
-                    CATEGORY_LABELS[
-                        selectedEntry.category
-                    ],
-                priority =
-                    selectedEntry.priority,
+                    CATEGORY_LABELS[selectedEntry.category],
+
+                priority = selectedEntry.priority,
+
                 roll =
-                    getBestRoll(
-                        selectedEntry.rolls
-                    ),
+                    getBestRoll(selectedEntry.rolls),
+
                 rolls = selectedEntry.rolls,
-                tieRoll =
-                    selectedEntry.tieRoll,
+                tieRoll = selectedEntry.tieRoll,
                 entry = selectedEntry,
             })
         end
@@ -355,28 +348,27 @@ end
 function Roll:BeginTie(tiedResults)
     local active = self.active
 
-    if not active or #tiedResults < 2 then
+    if not active or not tiedResults or #tiedResults < 2 then
         return
     end
 
-    local category =
-        tiedResults[1].category
+    local category = tiedResults[1].category
+    local expectedMaximum
 
-    local expectedMaximum =
-        category == "OS" and 99 or 100
+    if category == "OS" then
+        expectedMaximum = 99
+    else
+        expectedMaximum = 100
+    end
 
     local candidateEntries = {}
     local names = {}
 
     for _, result in ipairs(tiedResults) do
-        result.entry.tieEntries = {}
-    local names = {}
+        result.entry.tieRoll = nil
 
-    for _, result in ipairs(tiedResultsRoll) = nil
-
-        candidateEntries[
-            result.normalizedName
-        ] = result.entry
+        candidateEntries[result.normalizedName] =
+            result.entry
 
         table.insert(names, result.name)
     end
@@ -384,31 +376,25 @@ function Roll:BeginTie(tiedResults)
     table.sort(names)
 
     local duration =
-        tonumber(
-            AL.db.settings.rollDuration
-        ) or 12
+        tonumber(AL.db.settings.rollDuration) or 12
 
     active.state = "tie"
+
     active.tie = {
         category = category,
-        expectedMaximum =
-            expectedMaximum,
+        expectedMaximum = expectedMaximum,
         candidates = candidateEntries,
     }
 
-    active.endsAt =
-        GetTime() + duration
+    active.endsAt = GetTime() + duration
 
     active.message =
-        "Tie between "
-        .. table.concat(names, ", ")
+        "Tie between " .. table.concat(names, ", ")
 
     AL:Announce(string.format(
-        "Tie between %s for %s. "
-            .. "Reroll /roll %d.",
+        "Tie between %s for %s. Reroll /roll %d.",
         table.concat(names, ", "),
-        active.item.link
-            or active.item.name,
+        active.item.link or active.item.name,
         expectedMaximum
     ))
 
