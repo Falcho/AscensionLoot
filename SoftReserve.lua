@@ -205,10 +205,10 @@ function SR:LoadDemo()
     local data = {
         metadata = { id = "demo", instances = { "Zul'Gurub" }, origin = "raidres" },
         softreserves = {
-            { name = "Saphis", items = { { id = 12504, quality = 4 }, { id = 12473, quality = 4 } } },
-            { name = "Snixx", items = { { id = 12504, quality = 4 }, { id = 19912, quality = 4 } } },
-            { name = "cathyrina", items = { { id = 19857, quality = 4 }, { id = 19857, quality = 4 } } },
-            { name = "Bigdaddyvood", items = { { id = 19925, quality = 4 }, { id = 22722, quality = 4 } } },
+            { name = "Thrall", items = { { id = 12504, quality = 4 }, { id = 12473, quality = 4 } } },
+            { name = "Sylvannas", items = { { id = 12504, quality = 4 }, { id = 19912, quality = 4 } } },
+            { name = "Wrynn", items = { { id = 19857, quality = 4 }, { id = 19857, quality = 4 } } },
+            { name = "Magni", items = { { id = 19925, quality = 4 }, { id = 22722, quality = 4 } } },
         },
         hardreserves = {},
     }
