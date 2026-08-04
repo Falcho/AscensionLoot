@@ -135,21 +135,121 @@ end
 
 function Roll:BuildReserveMap(itemID)
     local result = {}
+    local resolutions = {}
 
     for _, reserver in ipairs(
         AL.SoftReserve:GetReservers(itemID)
     ) do
-        result[reserver.normalizedName] = reserver
+        local resolvedName,
+            matchType,
+            candidates =
+            AL:ResolveGroupMemberName(
+                reserver.name
+            )
+
+        -- Do not change the original imported
+        -- reserve entry.
+        local mapped =
+            AL:ShallowCopy(reserver)
+
+        mapped.importedName =
+            reserver.name
+
+        mapped.matchType =
+            matchType
+
+        mapped.matchCandidates =
+            candidates
+
+        local mapKey =
+            reserver.normalizedName
+
+        if resolvedName then
+            mapped.name =
+                resolvedName
+
+            mapped.normalizedName =
+                AL:NormalizeName(
+                    resolvedName
+                )
+
+            mapKey =
+                mapped.normalizedName
+        end
+
+        -- Two separate imported aliases might resolve
+        -- to the same player. Preserve all SR counts.
+        if result[mapKey] then
+            result[mapKey].count =
+                (
+                    tonumber(
+                        result[mapKey].count
+                    ) or 0
+                )
+                + (
+                    tonumber(mapped.count)
+                    or 0
+                )
+        else
+            result[mapKey] =
+                mapped
+        end
+
+        table.insert(resolutions, {
+            importedName =
+                reserver.name,
+
+            resolvedName =
+                resolvedName,
+
+            matchType =
+                matchType,
+
+            candidates =
+                candidates,
+        })
     end
 
-    return result
+    return result, resolutions
 end
 
-function Roll:ClassifyRoll(
-    playerName,
-    minimum,
-    maximum
-)
+function Roll:ReportReserveNameResolutions(resolutions)
+    for _, resolution in ipairs(
+        resolutions or {}
+    ) do
+        if resolution.matchType == "prefix" then
+            AL:Print(string.format(
+                "Matched imported SR name %s "
+                    .. "to raid member %s.",
+                tostring(
+                    resolution.importedName
+                ),
+                tostring(
+                    resolution.resolvedName
+                )
+            ))
+
+        elseif resolution.matchType
+            == "ambiguous"
+        then
+            AL:Print(string.format(
+                "Could not safely match imported "
+                    .. "SR name %s. "
+                    .. "Possible raid members: %s.",
+                tostring(
+                    resolution.importedName
+                ),
+                table.concat(
+                    resolution.candidates
+                        or {},
+                    ", "
+                )
+            ), 1, 0.4, 0.2)
+        end
+    end
+end
+
+function Roll:ClassifyRoll(playerName, minimum, maximum)
     if minimum ~= 1 then
         return nil
     end
@@ -424,6 +524,10 @@ function Roll:StartForItem(item)
     local copyCount =
         self:GetAvailableCopyCount(item)
 
+    local reserveMap,
+        reserveNameResolutions =
+        self:BuildReserveMap(item.id)
+
     self.active = {
         item = item,
         label = "Combined Roll",
@@ -431,8 +535,10 @@ function Roll:StartForItem(item)
         copyCount = copyCount,
         countdownAnnounced = {},
 
-        reserveMap =
-            self:BuildReserveMap(item.id),
+        reserveMap = reserveMap,
+
+        reserveNameResolutions =
+            reserveNameResolutions,
 
         rollsByPlayer = {},
 
@@ -446,6 +552,10 @@ function Roll:StartForItem(item)
         tie = nil,
         message = "Waiting for rolls...",
     }
+
+    self:ReportReserveNameResolutions(
+        reserveNameResolutions
+    )
 
     AL:Announce(string.format(
         "Roll for %s — %d %s available. "

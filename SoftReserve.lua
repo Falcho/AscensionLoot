@@ -9,7 +9,11 @@ SR.hardReserves = {}
 SR.metadata = {}
 
 local function addPlayerReserve(playerName, itemID, quality)
-    local normalized = AL:NormalizeName(playerName)
+    local displayName =
+        AL:FormatCharacterName(playerName)
+
+    local normalized =
+        AL:NormalizeName(displayName)
     if not normalized or normalized == "" or not itemID then return end
 
     SR.byItem[itemID] = SR.byItem[itemID] or {
@@ -29,7 +33,7 @@ local function addPlayerReserve(playerName, itemID, quality)
 
     if not reserver then
         reserver = {
-            name = playerName,
+            name = displayName,
             normalizedName = normalized,
             count = 0,
         }
@@ -38,7 +42,7 @@ local function addPlayerReserve(playerName, itemID, quality)
     reserver.count = reserver.count + 1
 
     SR.byPlayer[normalized] = SR.byPlayer[normalized] or {
-        name = playerName,
+        name = displayName,
         items = {},
     }
     local playerEntry = SR.byPlayer[normalized]

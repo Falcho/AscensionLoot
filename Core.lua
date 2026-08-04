@@ -133,6 +133,128 @@ function AL:NormalizeName(name)
     return string.lower(self:Trim(short))
 end
 
+function AL:FormatCharacterName(name)
+    local trimmed = self:Trim(name)
+
+    if trimmed == "" then
+        return trimmed
+    end
+
+    local characterName, realmSuffix =
+        trimmed:match("^([^%-]+)(.*)$")
+
+    if not characterName or characterName == "" then
+        return trimmed
+    end
+
+    -- Fix only the first character's capitalization.
+    -- cathyrina becomes Cathyrina.
+    characterName =
+        characterName:sub(1, 1):upper()
+        .. characterName:sub(2)
+
+    return characterName .. (realmSuffix or "")
+end
+
+function AL:GetGroupRosterNames()
+    local result = {}
+    local seen = {}
+
+    local function addName(name)
+        local normalized = self:NormalizeName(name)
+
+        if not normalized
+            or normalized == ""
+            or seen[normalized]
+        then
+            return
+        end
+
+        seen[normalized] = true
+        table.insert(result, name)
+    end
+
+    -- Include the addon user as well.
+    addName(UnitName("player"))
+
+    if self:IsInRaid() then
+        for index = 1, GetNumRaidMembers() do
+            addName(GetRaidRosterInfo(index))
+        end
+
+    elseif self:IsInParty() then
+        for index = 1, GetNumPartyMembers() do
+            addName(UnitName("party" .. index))
+        end
+    end
+
+    return result
+end
+
+function AL:ResolveGroupMemberName(importedName)
+    local importedNormalized =
+        self:NormalizeName(importedName)
+
+    if not importedNormalized
+        or importedNormalized == ""
+    then
+        return nil, "invalid", {}
+    end
+
+    local rosterNames =
+        self:GetGroupRosterNames()
+
+    --------------------------------------------------
+    -- First attempt: exact case-insensitive match
+    --------------------------------------------------
+
+    for _, rosterName in ipairs(rosterNames) do
+        if self:NormalizeName(rosterName)
+            == importedNormalized
+        then
+            return rosterName, "exact", {
+                rosterName,
+            }
+        end
+    end
+
+    --------------------------------------------------
+    -- Second attempt: unique prefix match
+    --------------------------------------------------
+
+    -- Do not perform prefix matching for one- or
+    -- two-character names. Those are too ambiguous.
+    if #importedNormalized < 3 then
+        return nil, "too_short", {}
+    end
+
+    local matches = {}
+
+    for _, rosterName in ipairs(rosterNames) do
+        local rosterNormalized =
+            self:NormalizeName(rosterName)
+
+        if rosterNormalized
+            and rosterNormalized:sub(
+                1,
+                #importedNormalized
+            ) == importedNormalized
+        then
+            table.insert(matches, rosterName)
+        end
+    end
+
+    if #matches == 1 then
+        return matches[1], "prefix", matches
+    end
+
+    if #matches > 1 then
+        return nil, "ambiguous", matches
+    end
+
+    return nil, "not_found", matches
+end
+
 function AL:GetItemID(itemLinkOrID)
     if type(itemLinkOrID) == "number" then return itemLinkOrID end
     if type(itemLinkOrID) ~= "string" then return nil end
