@@ -499,7 +499,9 @@ function Roll:BeginTie(tiedResults)
     AL:Announce(string.format(
         "Tie between %s for %s. Reroll /roll %d.",
         table.concat(names, ", "),
-        active.item.link or active.item.name,
+        AL:GetAnnouncementItemText(
+            active.item
+        ),
         expectedMaximum
     ))
 
@@ -562,9 +564,10 @@ function Roll:StartForItem(item)
             .. "SR/MS: /roll 100. "
             .. "OS: /roll 99. "
             .. "Priority: SR > MS > OS.",
-        item.link or item.name,
+        AL:GetAnnouncementItemText(item),
         copyCount,
-        copyCount == 1 and "copy"
+        copyCount == 1
+            and "copy"
             or "copies"
     ))
 
@@ -748,8 +751,9 @@ function Roll:Finish()
 
         AL:Announce(string.format(
             "Rolling has finished. No valid rolls for %s.",
-            active.item.link
-                or active.item.name
+            AL:GetAnnouncementItemText(
+                active.item
+            )
         ))
 
         if AL.UI then
@@ -828,10 +832,14 @@ function Roll:Finish()
 
     AL:Announce(string.format(
         "Rolling has finished, %s %s: %s.",
-        active.item.link
-            or active.item.name,
+        AL:GetAnnouncementItemText(
+            active.item
+        ),
         winnerWord,
-        table.concat(winnerTexts, ", ")
+        table.concat(
+            winnerTexts,
+            ", "
+        )
     ))
 
     if AL.UI then

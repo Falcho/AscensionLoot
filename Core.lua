@@ -110,6 +110,36 @@ function AL:GetItemKey(item)
     return "item:" .. tostring(item.id)
 end
 
+function AL:GetAnnouncementItemText(item)
+    if not item then
+        return "[Unknown Item]"
+    end
+
+    local itemName =
+        item.name
+        or "Unknown Item"
+
+    -- Demo links are manually constructed and do not
+    -- necessarily match the real server-side item data.
+    -- Sending them as hyperlinks may cause the entire
+    -- raid-warning message to be rejected.
+    if item.demo then
+        return "[" .. itemName .. "]"
+    end
+
+    if type(item.link) == "string"
+        and item.link:find(
+            "|Hitem:",
+            1,
+            true
+        )
+    then
+        return item.link
+    end
+
+    return "[" .. itemName .. "]"
+end
+
 function AL:InitializeDatabase()
     AscensionLootDB = AscensionLootDB or {}
     copyDefaults(defaults, AscensionLootDB)
@@ -325,46 +355,224 @@ function AL:SanitizeChatText(text)
         return ""
     end
 
-    -- Convert a full WoW hyperlink into only its visible label.
-    -- Example: |Hitem:123|h[Item]|h becomes [Item].
-    text = text:gsub("|H.-|h(.-)|h", "%1")
+    --------------------------------------------------
+    -- Temporarily protect genuine item hyperlinks
+    --------------------------------------------------
 
-    -- Remove color escape sequences which are useful locally but can
-    -- cause server chat messages to be rejected on some 3.3.5 clients.
-    text = text:gsub("|c%x%x%x%x%x%x%x%x", "")
+    local protectedLinks = {}
+
+    local function protectLink(link)
+        local index =
+            #protectedLinks + 1
+
+        protectedLinks[index] = link
+
+        return "\001ALITEM"
+            .. tostring(index)
+            .. "\002"
+    end
+
+    -- Normal coloured item hyperlink:
+    -- |cffa335ee|Hitem:123:...|h[Item]|h|r
+    text = text:gsub(
+        "|c%x%x%x%x%x%x%x%x|Hitem:[^|]+|h.-|h|r",
+        protectLink
+    )
+
+    -- Also support an item hyperlink without a colour wrapper.
+    text = text:gsub(
+        "|Hitem:[^|]+|h.-|h",
+        protectLink
+    )
+
+    --------------------------------------------------
+    -- Remove unrelated formatting
+    --------------------------------------------------
+
+    -- Arbitrary colour codes in outgoing chat can cause
+    -- rejection on some 3.3.5/private-server clients.
+    -- The item-link colour codes are currently protected.
+    text = text:gsub(
+        "|c%x%x%x%x%x%x%x%x",
+        ""
+    )
+
     text = text:gsub("|r", "")
 
-    -- Chat messages must stay on one line.
-    text = text:gsub("[\r\n]+", " ")
+    -- Chat messages must remain on one line.
+    text = text:gsub(
+        "[\r\n]+",
+        " "
+    )
+
+    --------------------------------------------------
+    -- Restore protected item hyperlinks
+    --------------------------------------------------
+
+    text = text:gsub(
+        "\001ALITEM(%d+)\002",
+        function(index)
+            return protectedLinks[
+                tonumber(index)
+            ] or ""
+        end
+    )
 
     return self:Trim(text)
 end
 
-local function splitChatText(text)
-    local parts = {}
+local function addPlainTextTokens(
+    tokens,
+    text
+)
+    for word in tostring(text or ""):gmatch("%S+") do
+        table.insert(tokens, word)
+    end
+end
 
-    while #text > CHAT_MESSAGE_MAX_BYTES do
-        local cut = CHAT_MESSAGE_MAX_BYTES
+local function tokenizeChatText(text)
+    local tokens = {}
+    local position = 1
+    local textLength = #text
 
-        while cut > 1 and text:sub(cut, cut) ~= " " do
-            cut = cut - 1
+    while position <= textLength do
+        local coloredStart,
+            coloredEnd =
+            text:find(
+                "|c%x%x%x%x%x%x%x%x|Hitem:[^|]+|h.-|h|r",
+                position
+            )
+
+        local plainStart,
+            plainEnd =
+            text:find(
+                "|Hitem:[^|]+|h.-|h",
+                position
+            )
+
+        local linkStart
+        local linkEnd
+
+        if coloredStart
+            and (
+                not plainStart
+                or coloredStart <= plainStart
+            )
+        then
+            linkStart = coloredStart
+            linkEnd = coloredEnd
+
+        elseif plainStart then
+            linkStart = plainStart
+            linkEnd = plainEnd
         end
 
-        if cut <= 1 then
-            cut = CHAT_MESSAGE_MAX_BYTES
+        if not linkStart then
+            addPlainTextTokens(
+                tokens,
+                text:sub(position)
+            )
+
+            break
         end
 
-        local part = AL:Trim(text:sub(1, cut))
-
-        if part ~= "" then
-            table.insert(parts, part)
+        if linkStart > position then
+            addPlainTextTokens(
+                tokens,
+                text:sub(
+                    position,
+                    linkStart - 1
+                )
+            )
         end
 
-        text = AL:Trim(text:sub(cut + 1))
+        -- A complete item link is treated as one token,
+        -- regardless of spaces inside the item name.
+        table.insert(
+            tokens,
+            text:sub(
+                linkStart,
+                linkEnd
+            )
+        )
+
+        position = linkEnd + 1
     end
 
-    if text ~= "" then
-        table.insert(parts, text)
+    return tokens
+end
+
+local function splitChatText(text)
+    local parts = {}
+    local current = ""
+
+    local tokens =
+        tokenizeChatText(text)
+
+    for _, token in ipairs(tokens) do
+        local candidate
+
+        if current == "" then
+            candidate = token
+        else
+            candidate =
+                current .. " " .. token
+        end
+
+        if #candidate
+            <= CHAT_MESSAGE_MAX_BYTES
+        then
+            current = candidate
+        else
+            if current ~= "" then
+                table.insert(
+                    parts,
+                    current
+                )
+
+                current = ""
+            end
+
+            -- Item links should never be divided.
+            -- A normal item hyperlink is comfortably
+            -- below the configured message limit.
+            if token:find(
+                "|Hitem:",
+                1,
+                true
+            )
+            then
+                current = token
+
+            else
+                -- Safety fallback for an unusually long
+                -- unbroken piece of ordinary text.
+                while #token
+                    > CHAT_MESSAGE_MAX_BYTES
+                do
+                    table.insert(
+                        parts,
+                        token:sub(
+                            1,
+                            CHAT_MESSAGE_MAX_BYTES
+                        )
+                    )
+
+                    token = token:sub(
+                        CHAT_MESSAGE_MAX_BYTES + 1
+                    )
+                end
+
+                current = token
+            end
+        end
+    end
+
+    if current ~= "" then
+        table.insert(
+            parts,
+            current
+        )
     end
 
     return parts
