@@ -50,6 +50,45 @@ function Session:AddCollected(item, holderName)
     return entry
 end
 
+function Session:GetUnassignedCopies(
+    itemID,
+    holderName
+)
+    local result = {}
+    local wantedItemID =
+        tonumber(itemID)
+
+    local normalizedHolder =
+        holderName
+        and AL:NormalizeName(holderName)
+        or nil
+
+    for _, entry in ipairs(
+        self:GetItems() or {}
+    ) do
+        local holderMatches =
+            not normalizedHolder
+            or AL:NormalizeName(entry.holder)
+                == normalizedHolder
+
+        if tonumber(entry.id)
+                == wantedItemID
+            and entry.status
+                == "unassigned"
+            and holderMatches
+        then
+            table.insert(result, entry)
+        end
+    end
+
+    table.sort(result, function(left, right)
+        return (left.collectedAt or 0)
+            < (right.collectedAt or 0)
+    end)
+
+    return result
+end
+
 function Session:FindFirstUnassigned(itemID, holderName)
     local normalizedHolder = AL:NormalizeName(holderName)
 
@@ -68,7 +107,7 @@ function Session:FindFirstUnassigned(itemID, holderName)
     return nil
 end
 
-function Session:Assign(entry, winner, reason, winningRoll)
+function Session:Assign(entry, winner, reason, winningRoll,deferTradeStart)
     if not entry or not winner then return false end
 
     entry.status = "awaiting_trade"
@@ -100,7 +139,7 @@ function Session:Assign(entry, winner, reason, winningRoll)
     end
 
     if AL.Trade then
-        AL.Trade:Queue(entry)
+        AL.Trade:Queue(entry, deferTradeStart)
     end
 
     return true

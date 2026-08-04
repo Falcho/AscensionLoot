@@ -278,23 +278,139 @@ function Loot:AssignHeldItem(item, playerName, reason)
     end
 end
 
-function Loot:AwardActiveWinner(item)
-    local winner = AL.Roll:GetWinner()
-    if not winner then
-        AL:Print("There is no proposed winner for this item.", 1, 0.5, 0.2)
+function Loot:AwardActiveWinners(item)
+    local active = AL.Roll.active
+
+    if not active then
+        AL:Print(
+            "There is no active roll.",
+            1,
+            0.5,
+            0.2
+        )
+
         return
     end
-    if not AL.Roll.active
-        or AL:GetItemKey(AL.Roll.active.item) ~= AL:GetItemKey(item)
+
+    if active.state ~= "finished" then
+        AL:Print(
+            "Finish the roll before awarding.",
+            1,
+            0.5,
+            0.2
+        )
+
+        return
+    end
+
+    if AL:GetItemKey(active.item)
+        ~= AL:GetItemKey(item)
     then
-        AL:Print("The active roll belongs to a different item.", 1, 0.5, 0.2)
+        AL:Print(
+            "The active roll belongs to a different item.",
+            1,
+            0.5,
+            0.2
+        )
+
         return
     end
-    if item.source == "loot" then
-        self:Award(item, winner, AL.Roll.active.label)
-    else
-        self:AssignHeldItem(item, winner, AL.Roll.active.label)
+
+    local winners =
+        AL.Roll:GetWinners()
+
+    if #winners == 0 then
+        AL:Print(
+            "There are no proposed winners.",
+            1,
+            0.5,
+            0.2
+        )
+
+        return
     end
+
+    local copies = {}
+
+    if AL.LootSession
+        and AL.LootSession.GetUnassignedCopies
+    then
+        copies =
+            AL.LootSession:GetUnassignedCopies(
+                item.id,
+                UnitName("player")
+            )
+    end
+
+    if #copies == 0 then
+        -- This fallback preserves direct awarding
+        -- from a currently open loot window.
+        if item.source == "loot"
+            and winners[1]
+        then
+            self:Award(
+                item,
+                winners[1].name,
+                winners[1].categoryLabel
+            )
+
+            return
+        end
+
+        AL:Print(
+            "No unassigned copies of this item "
+                .. "were found in the loot session.",
+            1,
+            0.3,
+            0.3
+        )
+
+        return
+    end
+
+    local awardCount =
+        math.min(#copies, #winners)
+
+    for index = 1, awardCount do
+        local entry = copies[index]
+        local winner = winners[index]
+
+        AL.LootSession:Assign(
+            entry,
+            winner.name,
+            winner.categoryLabel,
+            winner.roll,
+            true
+        )
+    end
+
+    AL:Print(string.format(
+        "Assigned %d %s of %s.",
+        awardCount,
+        awardCount == 1
+            and "copy"
+            or "copies",
+        item.link or item.name
+    ))
+
+    AL.Roll.active = nil
+
+    if AL.UI then
+        AL.UI:RefreshAll()
+    end
+
+    -- All assignments are now recorded.
+    -- Start the first pending trade.
+    if AL.Trade
+        and AL.db.settings.autoOpenTrade
+    then
+        AL.Trade:TryStart()
+    end
+end
+
+-- Compatibility wrapper for old UI references.
+function Loot:AwardActiveWinner(item)
+    self:AwardActiveWinners(item)
 end
 
 function Loot:DirectAward(item)

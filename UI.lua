@@ -384,7 +384,7 @@ function UI:CreateLootPanel(panel)
 
     local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -24)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 128)
+    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 200)
     local child = CreateFrame("Frame", nil, scroll)
     child:SetWidth(620)
     child:SetHeight(1)
@@ -397,7 +397,7 @@ function UI:CreateLootPanel(panel)
     rollPanel:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
     rollPanel:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 0, 0)
     rollPanel:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
-    rollPanel:SetHeight(118)
+    rollPanel:SetHeight(190)
     self.rollPanel = rollPanel
 
     rollPanel.title = rollPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -421,11 +421,15 @@ function UI:CreateLootPanel(panel)
     rollPanel.cancel:SetPoint("LEFT", rollPanel.finish, "RIGHT", 8, 0)
     rollPanel.cancel:SetScript("OnClick", function() AL.Roll:Cancel() end)
 
-    rollPanel.award = createButton(rollPanel, "Award Winner", 110, 22)
+    rollPanel.award = createButton(rollPanel, "Award Winners", 115, 22)
     rollPanel.award:SetPoint("LEFT", rollPanel.cancel, "RIGHT", 8, 0)
-    rollPanel.award:SetScript("OnClick", function()
-        if AL.Roll.active then AL.Loot:AwardActiveWinner(AL.Roll.active.item) end
-    end)
+    rollPanel.award:SetScript("OnClick", function() if AL.Roll.active then
+                AL.Loot:AwardActiveWinners(
+                    AL.Roll.active.item
+                )
+            end
+        end
+    )
 end
 
 function UI:CreateLootRow(index)
@@ -462,27 +466,30 @@ function UI:CreateLootRow(index)
     row.roll:SetPoint("TOPRIGHT", row, "TOPRIGHT", -168, -10)
     row.roll:SetScript("OnClick", function() if row.item then AL.Roll:StartForItem(row.item) end end)
 
-    row.os = createButton(row, "OS", 45, 22)
-    row.os:SetPoint("LEFT", row.roll, "RIGHT", 4, 0)
-    row.os:SetScript("OnClick", function() if row.item then AL.Roll:StartOffSpec(row.item) end end)
-
     row.award = createButton(row, "Award", 66, 22)
-    row.award:SetPoint("LEFT", row.os, "RIGHT", 4, 0)
+    row.award:SetPoint("LEFT", row.roll, "RIGHT", 4, 0)
     row.award:SetScript("OnClick", function()
-        if not row.item then
-            return
-        end
+            if not row.item then
+                return
+            end
 
-        if AL.Roll.active
-            and AL.Roll.active.proposedWinner
-            and AL:GetItemKey(AL.Roll.active.item)
-                == AL:GetItemKey(row.item)
-        then
-            AL.Loot:AwardActiveWinner(row.item)
-        else
-            AL.Loot:DirectAward(row.item)
+            local active = AL.Roll.active
+
+            if active
+                and active.state == "finished"
+                and AL:GetItemKey(active.item)
+                    == AL:GetItemKey(row.item)
+            then
+                AL.Loot:AwardActiveWinners(
+                    row.item
+                )
+            else
+                AL.Loot:DirectAward(
+                    row.item
+                )
+            end
         end
-    end)
+    )
 
     row.trade = createButton(row, "Trade", 65, 22)
     row.trade:SetPoint("LEFT", row.award, "RIGHT", 4, 0)
@@ -687,39 +694,187 @@ function UI:RefreshLoot()
 end
 
 function UI:RefreshRollTimer()
-    if not self.rollPanel or not AL.Roll.active or AL.Roll.active.state ~= "rolling" then return end
-    self.rollPanel.timer:SetText(math.max(0, math.ceil(AL.Roll.active.endsAt - GetTime())) .. "s")
-end
-
-function UI:RefreshRoll()
-    if not self.rollPanel then return end
-    local active = AL.Roll.active
-    if not active then
-        self.rollPanel.title:SetText("No active roll")
-        self.rollPanel.timer:SetText("")
-        self.rollPanel.results:SetText("Alt-click an item to start the appropriate roll.")
-        self.rollPanel.finish:Disable()
-        self.rollPanel.cancel:Disable()
-        self.rollPanel.award:Disable()
+    if not self.rollPanel
+        or not AL.Roll.active
+    then
         return
     end
 
-    self.rollPanel.title:SetText(string.format("%s — %s", active.label, active.item.link or active.item.name))
+    local state =
+        AL.Roll.active.state
+
+    if state ~= "rolling"
+        and state ~= "tie"
+    then
+        self.rollPanel.timer:SetText("")
+        return
+    end
+
+    self.rollPanel.timer:SetText(
+        math.max(
+            0,
+            math.ceil(
+                AL.Roll.active.endsAt
+                    - GetTime()
+            )
+        )
+        .. "s"
+    )
+end
+
+function UI:RefreshRoll()
+    if not self.rollPanel then
+        return
+    end
+
+    local active = AL.Roll.active
+
+    if not active then
+        self.rollPanel.title:SetText(
+            "No active roll"
+        )
+
+        self.rollPanel.timer:SetText("")
+
+        self.rollPanel.results:SetText(
+            "Alt-click an item to begin one combined "
+                .. "SR / MS / OS roll."
+        )
+
+        self.rollPanel.finish:Disable()
+        self.rollPanel.cancel:Disable()
+        self.rollPanel.award:Disable()
+
+        return
+    end
+
+    self.rollPanel.title:SetText(
+        string.format(
+            "%s — %s — %d %s",
+            active.label,
+            active.item.link
+                or active.item.name,
+            active.copyCount or 1,
+            (active.copyCount or 1) == 1
+                and "copy"
+                or "copies"
+        )
+    )
+
     self:RefreshRollTimer()
 
     local lines = {}
-    for index, result in ipairs(AL.Roll:GetSortedResults()) do
-        local allRolls = {}
-        for _, value in ipairs(result.rolls or {}) do table.insert(allRolls, tostring(value)) end
-        table.insert(lines, string.format("%d. %s — %d%s", index, result.name, result.roll, #allRolls > 1 and (" [" .. table.concat(allRolls, ", ") .. "]") or ""))
-        if #lines >= 3 then break end
-    end
-    if #lines == 0 then table.insert(lines, active.message or "Waiting for rolls...") end
-    self.rollPanel.results:SetText(table.concat(lines, "\n"))
+    local results =
+        AL.Roll:GetSortedResults()
 
-    if active.state == "rolling" then self.rollPanel.finish:Enable() else self.rollPanel.finish:Disable() end
+    local winningNames = {}
+
+    for _, winner in ipairs(
+        active.proposedWinners or {}
+    ) do
+        winningNames[
+            winner.normalizedName
+        ] = true
+    end
+
+    for index, result in ipairs(results) do
+        local extraRollText = ""
+
+        if #(result.rolls or {}) > 1 then
+            local values = {}
+
+            for _, value in ipairs(
+                result.rolls
+            ) do
+                table.insert(
+                    values,
+                    tostring(value)
+                )
+            end
+
+            extraRollText =
+                " ["
+                .. table.concat(values, ", ")
+                .. "]"
+        end
+
+        local tieText = ""
+
+        if result.tieRoll then
+            tieText =
+                " [tie: "
+                .. tostring(result.tieRoll)
+                .. "]"
+        end
+
+        local winnerMarker = ""
+
+        if active.state == "finished"
+            and winningNames[
+                result.normalizedName
+            ]
+        then
+            winnerMarker = " |cff66ff66WINNER|r"
+        end
+
+        table.insert(
+            lines,
+            string.format(
+                "%d. %s — %d (%s)%s%s%s",
+                index,
+                result.name,
+                result.roll,
+                result.category,
+                extraRollText,
+                tieText,
+                winnerMarker
+            )
+        )
+
+        if #lines >= 8 then
+            break
+        end
+    end
+
+    if #results > 8 then
+        table.insert(
+            lines,
+            string.format(
+                "... and %d more",
+                #results - 8
+            )
+        )
+    end
+
+    if #lines == 0 then
+        table.insert(
+            lines,
+            active.message
+                or "Waiting for rolls..."
+        )
+    end
+
+    self.rollPanel.results:SetText(
+        table.concat(lines, "\n")
+    )
+
+    if active.state == "rolling"
+        or active.state == "tie"
+    then
+        self.rollPanel.finish:Enable()
+    else
+        self.rollPanel.finish:Disable()
+    end
+
     self.rollPanel.cancel:Enable()
-    if active.proposedWinner then self.rollPanel.award:Enable() else self.rollPanel.award:Disable() end
+
+    if active.state == "finished"
+        and #(active.proposedWinners or {}) > 0
+    then
+        self.rollPanel.award:Enable()
+    else
+        self.rollPanel.award:Disable()
+    end
 end
 
 function UI:CreateReservesPanel(panel)

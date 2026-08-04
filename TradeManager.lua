@@ -129,7 +129,7 @@ function Trade:GetNextPendingEntry()
     return nil
 end
 
-function Trade:Queue(entry)
+function Trade:Queue(entry, deferTradeStart)
     if not entry or not entry.winner then
         return
     end
@@ -142,7 +142,9 @@ function Trade:Queue(entry)
         AL.UI:RefreshAll()
     end
 
-    if AL.db.settings.autoOpenTrade then
+    if AL.db.settings.autoOpenTrade 
+        and not deferTradeStart
+    then
         self:TryStart(entry)
     end
 end
