@@ -432,41 +432,79 @@ function UI:CreateLootPanel(panel)
     )
 end
 
+local LOOT_ROW_HEIGHT = 48
+local LOOT_ROW_STEP = 52
+
 function UI:CreateLootRow(index)
     local child = self.lootChild
     local row = CreateFrame("Button", nil, child)
-    row:SetHeight(72)
-    row:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -((index - 1) * 76))
+    row:SetHeight(LOOT_ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -((index - 1) * LOOT_ROW_STEP))
     row:SetPoint("RIGHT", child, "RIGHT", 0, 0)
     row:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 10, insets = { left = 2, right = 2, top = 2, bottom = 2 } })
     row:SetBackdropColor(0.08, 0.08, 0.08, 0.85)
     row:RegisterForClicks("LeftButtonUp")
 
     row.icon = row:CreateTexture(nil, "ARTWORK")
-    row.icon:SetWidth(42)
-    row.icon:SetHeight(42)
-    row.icon:SetPoint("LEFT", row, "LEFT", 10, 0)
+    row.icon:SetWidth(32)
+    row.icon:SetHeight(32)
+    row.icon:SetPoint("LEFT", row, "LEFT", 8, 0)
 
-    row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 10, 2)
-    row.name:SetPoint("RIGHT", row, "RIGHT", -245, 0)
+    row.name = row:CreateFontString(
+        nil,
+        "OVERLAY",
+        "GameFontNormal"
+    )
+
+    row.name:SetPoint(
+        "TOPLEFT",
+        row.icon,
+        "TOPRIGHT",
+        8,
+        -1
+    )
+
+    row.name:SetPoint(
+        "RIGHT",
+        row,
+        "RIGHT",
+        -220,
+        0
+    )
+
     row.name:SetJustifyH("LEFT")
+    row.name:SetWordWrap(false)
 
-    row.reserves = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.reserves:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -5)
-    row.reserves:SetPoint("RIGHT", row, "RIGHT", -245, 0)
+    row.reserves = row:CreateFontString(
+        nil,
+        "OVERLAY",
+        "GameFontHighlightSmall"
+    )
+
+    row.reserves:SetPoint(
+        "TOPLEFT",
+        row.name,
+        "BOTTOMLEFT",
+        0,
+        -3
+    )
+
+    row.reserves:SetPoint(
+        "RIGHT",
+        row,
+        "RIGHT",
+        -220,
+        0
+    )
+
     row.reserves:SetJustifyH("LEFT")
+    row.reserves:SetWordWrap(false)
 
-    row.status = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    row.status:SetPoint("TOPLEFT", row.reserves, "BOTTOMLEFT", 0, -4)
-    row.status:SetPoint("RIGHT", row, "RIGHT", -245, 0)
-    row.status:SetJustifyH("LEFT")
-
-    row.roll = createButton(row, "Roll", 62, 22)
-    row.roll:SetPoint("TOPRIGHT", row, "TOPRIGHT", -168, -10)
+    row.roll = createButton(row, "Roll", 48, 18)
+    row.roll:SetPoint("TOPRIGHT", row, "TOPRIGHT", -166, 0)
     row.roll:SetScript("OnClick", function() if row.item then AL.Roll:StartForItem(row.item) end end)
 
-    row.award = createButton(row, "Award", 66, 22)
+    row.award = createButton(row, "Award", 50, 18)
     row.award:SetPoint("LEFT", row.roll, "RIGHT", 4, 0)
     row.award:SetScript("OnClick", function()
             if not row.item then
@@ -491,7 +529,7 @@ function UI:CreateLootRow(index)
         end
     )
 
-    row.trade = createButton(row, "Trade", 65, 22)
+    row.trade = createButton(row, "Trade", 50, 18)
     row.trade:SetPoint("LEFT", row.award, "RIGHT", 4, 0)
     row.trade:SetScript("OnClick", function()
         if not row.item then
@@ -512,7 +550,7 @@ function UI:CreateLootRow(index)
         AL.Trade:TryStart(row.item)
     end)
 
-    row.skip = createButton(row, "Skip", 62, 22)
+    row.skip = createButton(row, "Skip", 44, 18)
     row.skip:SetPoint("TOPRIGHT", row, "TOPRIGHT", -12, -39)
     row.skip:SetScript("OnClick", function()
         if row.item then row.item.skipped = true UI:RefreshLoot() end
@@ -548,8 +586,6 @@ function UI:RefreshLoot()
 
     local visibleItems = {}
 
-    local visibleItems = {}
-
     -- Show items collected for later distribution.
     if AL.LootSession then
         for _, item in ipairs(AL.LootSession:GetItems() or {}) do
@@ -573,113 +609,123 @@ function UI:RefreshLoot()
         row.name:SetText(item.link or item.name or ("Item " .. tostring(item.id)))
 
         local reservers = AL.SoftReserve:GetReservers(item.id)
+
+        local reserveText
+
         if AL.SoftReserve:IsHardReserved(item.id) then
-            row.reserves:SetText("|cffff5555Hard reserved|r")
+            reserveText =
+                "|cffff5555Hard reserved|r"
+
         elseif #reservers > 0 then
             local names = {}
+
             for _, reserver in ipairs(reservers) do
-                local suffix = reserver.count > 1 and (" x" .. reserver.count) or ""
-                table.insert(names, reserver.name .. suffix)
+                local suffix = ""
+
+                if reserver.count > 1 then
+                    suffix = " x" .. reserver.count
+                end
+
+                table.insert(
+                    names,
+                    reserver.name .. suffix
+                )
             end
-            row.reserves:SetText("|cff66ff66SR:|r " .. table.concat(names, ", "))
+
+            reserveText =
+                "|cff66ff66SR:|r "
+                .. table.concat(names, ", ")
+
         else
-            row.reserves:SetText("No soft reserves")
+            reserveText =
+                "|cff999999No soft reserves|r"
         end
 
-        if AL.Roll.active
+        local secondaryText = reserveText
+
+        local activeRollMatches =
+            AL.Roll
+            and AL.Roll.active
             and AL.Roll.active.item
             and AL:GetItemKey(AL.Roll.active.item)
                 == AL:GetItemKey(item)
-        then
-            row.status:SetText(
-                AL.Roll.active.message
-                    or (AL.Roll.active.label .. " roll active")
-            )
 
-        elseif item.demo then
-            row.status:SetText(
-                "Demo item — rolling works, assigning is disabled"
-            )
+        if activeRollMatches then
+            secondaryText =
+                "|cffffff66"
+                .. tostring(
+                    AL.Roll.active.message
+                        or (
+                            AL.Roll.active.label
+                            .. " roll active"
+                        )
+                )
+                .. "|r"
 
         elseif item.status == "awaiting_trade" then
-            local tradeMessage = "Awaiting trade to "
-                .. tostring(item.winner or "Unknown")
+            local tradeMessage =
+                "Awaiting trade to "
+                .. tostring(
+                    item.winner or "Unknown"
+                )
 
             if item.tradeStatus == "waiting_for_range" then
-                tradeMessage = tostring(item.winner)
+                tradeMessage =
+                    tostring(item.winner)
                     .. " is not in trade range"
 
             elseif item.tradeStatus == "waiting_for_player" then
-                tradeMessage = tostring(item.winner)
+                tradeMessage =
+                    tostring(item.winner)
                     .. " is not currently in the group"
 
             elseif item.tradeStatus == "waiting_for_combat" then
-                tradeMessage = "Waiting until combat ends"
+                tradeMessage =
+                    "Waiting until combat ends"
 
             elseif item.tradeStatus == "trade_requested" then
-                tradeMessage = "Trade requested with "
+                tradeMessage =
+                    "Trade requested with "
                     .. tostring(item.winner)
 
             elseif item.tradeStatus == "trade_cancelled" then
-                tradeMessage = "Trade cancelled — click Trade to retry"
+                tradeMessage =
+                    "Trade cancelled — click Trade to retry"
 
             elseif item.tradeStatus == "item_not_found" then
-                tradeMessage = "Assigned item not found in bags"
+                tradeMessage =
+                    "Assigned item not found in bags"
+
+            elseif item.tradeStatus == "pickup_failed" then
+                tradeMessage =
+                    "Could not place item in trade"
             end
 
-            row.status:SetText(tradeMessage)
+            secondaryText =
+                "|cffffcc66"
+                .. tradeMessage
+                .. "|r"
 
         elseif item.status == "in_trade" then
-            row.status:SetText(
-                "In trade window for "
-                    .. tostring(item.winner or "Unknown")
-            )
+            secondaryText =
+                "|cff66ccffIn trade window for "
+                .. tostring(
+                    item.winner or "Unknown"
+                )
+                .. "|r"
 
         elseif item.status == "traded" then
-            row.status:SetText(
-                "Traded to "
-                    .. tostring(item.tradedTo or item.winner)
-            )
-
-        elseif item.holder then
-            local remainingText = ""
-
-            if item.estimatedTradeExpiresAt then
-                local remaining =
-                    item.estimatedTradeExpiresAt - time()
-
-                if remaining > 0 then
-                    local minutes = math.floor(remaining / 60)
-
-                    remainingText = string.format(
-                        " — approximately %dm remaining",
-                        minutes
-                    )
-                else
-                    remainingText = " — estimated trade window expired"
-                end
-            end
-
-            row.status:SetText(
-                string.format(
-                    "Held by %s%s",
-                    item.holder,
-                    remainingText
+            secondaryText =
+                "|cff66ff66Traded to "
+                .. tostring(
+                    item.tradedTo
+                        or item.winner
+                        or "Unknown"
                 )
-            )
-
-        elseif item.source == "bag" then
-            row.status:SetText(
-                string.format(
-                    "Bag %s, slot %s",
-                    tostring(item.bag),
-                    tostring(item.bagSlot)
-                )
-            )
-
-        else
-            row.status:SetText("Ready for distribution")
+                .. "|r"
         end
+
+        row.reserves:SetText(secondaryText)
 
         setTooltip(row, item.link)
         row:Show()
@@ -689,7 +735,7 @@ function UI:RefreshLoot()
         self.lootRows[index]:Hide()
     end
 
-    self.lootChild:SetHeight(math.max(1, #visibleItems * 76))
+    self.lootChild:SetHeight(math.max(1, #visibleItems * LOOT_ROW_STEP))
     self:RefreshRoll()
 end
 
