@@ -9,6 +9,9 @@ Loot.confirmData = nil
 Loot.autoQueue = {}
 Loot.collectionQueue = {}
 Loot.pendingCollection = nil
+Loot.pendingMasterLoot = nil
+
+Loot.autoLooting = false
 Loot.nextAutoAction = 0
 Loot.isOpen = false
 
@@ -91,12 +94,17 @@ function Loot:Refresh()
     if AL.UI then AL.UI:RefreshLoot() end
 end
 
-function Loot:OnOpened()
+function Loot:OnOpened(autoLoot)
     if self.demo then
         AL.SoftReserve:LoadFromDatabase()
     end
+
     self.demo = false
     self.isOpen = true
+
+    self.autoLooting =
+        autoLoot == 1
+        or autoLoot == true
     self.pendingAward = nil
     self:Refresh()
     self.BuildCollectionQueue()
@@ -109,9 +117,21 @@ end
 
 function Loot:OnClosed()
     self.isOpen = false
+    self.autoLooting = false
+
     self.autoQueue = {}
-    if not self.demo then self.items = {} end
-    if AL.UI then AL.UI:RefreshLoot() end
+    self.collectionQueue = {}
+
+    self.pendingCollection = nil
+    self.pendingMasterLoot = nil
+
+    if not self.demo then
+        self.items = {}
+    end
+
+    if AL.UI then
+        AL.UI:RefreshLoot()
+    end
 end
 
 function Loot:GetItemBySlot(slot)
@@ -210,7 +230,9 @@ function Loot:OnSlotCleared(slot)
     if self.pendingCollection
         and self.pendingCollection.slot == slot
     then
-        local collection = self.pendingCollection
+        local collection =
+            self.pendingCollection
+
         self.pendingCollection = nil
 
         AL.LootSession:AddCollected(
@@ -220,12 +242,17 @@ function Loot:OnSlotCleared(slot)
 
         AL:Print(string.format(
             "Collected %s for later distribution. Holder: %s.",
-            collection.item.link or collection.item.name,
+            collection.item.link
+                or collection.item.name,
             collection.holder
         ))
     end
 
-    if self.pendingAward and self.pendingAward.slot == slot then
+    if self.pendingMasterLoot
+        and self.pendingMasterLoot.slot == slot
+    then
+        self.pendingMasterLoot = nil
+    end
         AL:AddHistory({
             itemID = self.pendingAward.itemID,
             itemLink = self.pendingAward.itemLink,
@@ -245,8 +272,23 @@ function Loot:OnSlotCleared(slot)
 end
 
 function Loot:OnBindConfirm(slot)
-    if not self.pendingCollection then return end
-    if self.pendingCollection.slot ~= slot then return end
+    if AL.db.settings
+        .autoConfirmMasterLootToSelf == false
+    then
+        return
+    end
+
+    local pending =
+        self.pendingCollection
+        or self.pendingMasterLoot
+
+    if not pending then
+        return
+    end
+
+    if pending.slot ~= slot then
+        return
+    end
 
     ConfirmLootSlot(slot)
 end
@@ -460,40 +502,109 @@ end
 function Loot:BuildCollectionQueue()
     self.collectionQueue = {}
 
-    if not AL.db.settings.autoCollectTrackedLoot then
-        return
-    end
-
     if not self:IsMasterLooter() then
         return
     end
 
-    for slot = GetNumLootItems(), 1, -1 do
-        local item = lootSlotItem(slot)
+    local settings = AL.db.settings
 
-        if item and AL.ItemUtils:ShouldTrack(item) then
-            table.insert(self.collectionQueue, {
-                slot = slot,
-                item = item,
-            })
+    local assignEverythingToSelf =
+        self.autoLooting
+        and settings.autoMasterLootToSelf
+
+    local collectTrackedLoot =
+        settings.autoCollectTrackedLoot
+
+    if not assignEverythingToSelf
+        and not collectTrackedLoot
+    then
+        return
+    end
+
+    for slot = GetNumLootItems(), 1, -1 do
+        local item =
+            lootSlotItem(slot)
+
+        if item then
+            local shouldTrack =
+                AL.ItemUtils:ShouldTrack(item)
+
+            local shouldQueue =
+                assignEverythingToSelf
+                or (
+                    collectTrackedLoot
+                    and shouldTrack
+                )
+
+            if shouldQueue then
+                local holder
+
+                if assignEverythingToSelf then
+                    holder = UnitName("player")
+                else
+                    holder = self:GetHolderName()
+                end
+
+                table.insert(
+                    self.collectionQueue,
+                    {
+                        slot = slot,
+                        item = item,
+                        holder = holder,
+                        trackInSession = shouldTrack,
+                    }
+                )
+            end
         end
     end
 end
 
 function Loot:BuildAutoQueue()
     self.autoQueue = {}
-    self.nextAutoAction = GetTime() + 0.25
+    self.nextAutoAction =
+        GetTime() + 0.25
+
+    local masterLootHandlesAllItems =
+        self.autoLooting
+        and self:IsMasterLooter()
+        and AL.db.settings.autoMasterLootToSelf
 
     for slot = GetNumLootItems(), 1, -1 do
-        local link = GetLootSlotLink(slot)
+        local link =
+            GetLootSlotLink(slot)
+
         if link then
-            local item = lootSlotItem(slot)
-            if self:ShouldAutoLoot(item) then
-                table.insert(self.autoQueue, { kind = "item", slot = slot, itemID = item.id })
+            -- During Master Looter auto-loot, every item
+            -- is already handled by collectionQueue.
+            if not masterLootHandlesAllItems then
+                local item =
+                    lootSlotItem(slot)
+
+                if self:ShouldAutoLoot(item) then
+                    table.insert(
+                        self.autoQueue,
+                        {
+                            kind = "item",
+                            slot = slot,
+                            itemID = item.id,
+                        }
+                    )
+                end
             end
+
         elseif AL.db.settings.autoLootCoins then
-            local _, name = GetLootSlotInfo(slot)
-            if name then table.insert(self.autoQueue, { kind = "coin", slot = slot }) end
+            local _, name =
+                GetLootSlotInfo(slot)
+
+            if name then
+                table.insert(
+                    self.autoQueue,
+                    {
+                        kind = "coin",
+                        slot = slot,
+                    }
+                )
+            end
         end
     end
 end
@@ -502,7 +613,9 @@ function Loot:ProcessAutoQueue()
     if not self.isOpen or #self.autoQueue == 0 or GetTime() < self.nextAutoAction then return end
     self.nextAutoAction = GetTime() + 0.25
 
-    if self.pendingCollection then
+    if self.pendingCollection
+        or self.pendingMasterLoot
+    then
         return
     end
 
@@ -516,8 +629,15 @@ function Loot:ProcessAutoQueue()
             return
         end
 
-        local holder = self:GetHolderName()
-        local candidateIndex = self:FindCandidateIndex(action.slot, holder)
+        local holder =
+            action.holder
+            or self:GetHolderName()
+
+        local candidateIndex =
+            self:FindCandidateIndex(
+                action.slot,
+                holder
+            )
 
         if not candidateIndex then
             AL:Print(
@@ -530,13 +650,26 @@ function Loot:ProcessAutoQueue()
             return
         end
 
-        self.pendingCollection = {
-            slot = action.slot,
-            item = action.item,
-            holder = holder,
-        }
+        if action.trackInSession then
+            self.pendingCollection = {
+                slot = action.slot,
+                item = action.item,
+                holder = holder,
+            }
+        else
+            self.pendingMasterLoot = {
+                slot = action.slot,
+                itemID = action.item.id,
+                itemLink = action.item.link,
+                holder = holder,
+            }
+        end
 
-        GiveMasterLoot(action.slot, candidateIndex)
+        GiveMasterLoot(
+            action.slot,
+            candidateIndex
+        )
+
         return
     end
 

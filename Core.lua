@@ -22,8 +22,12 @@ local defaults = {
         duplicateReservesGiveExtraRolls = true,
 
         autoCollectTrackedLoot = true,
+        autoMasterLootToSelf = true,
+        autoConfirmMasterLootToSelf = true,
+        
         lootHolderMode = "MASTER_LOOTER",
         lootHolderName = "",
+
 
         minimumTrackedQuality = 4,
         trackRareBindOnPickup = true,

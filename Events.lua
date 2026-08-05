@@ -7,6 +7,7 @@ eventFrame:RegisterEvent("LOOT_OPENED")
 eventFrame:RegisterEvent("LOOT_CLOSED")
 eventFrame:RegisterEvent("LOOT_SLOT_CLEARED")
 eventFrame:RegisterEvent("LOOT_SLOT_CHANGED")
+eventFrame:RegisterEvent("LOOT_BIND_CONFIRM")
 eventFrame:RegisterEvent("BAG_UPDATE")
 eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 eventFrame:RegisterEvent("UI_ERROR_MESSAGE")
@@ -36,7 +37,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 .. ". Type /al for the loot frame."
         )
     elseif event == "LOOT_OPENED" then
-        AL.Loot:OnOpened()
+        local autoLoot =
+            select(1, ...)
+
+        AL.Loot:OnOpened(autoLoot)
     elseif event == "LOOT_CLOSED" then
         AL.Loot:OnClosed()
     elseif event == "LOOT_SLOT_CLEARED" then
@@ -44,6 +48,13 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         AL.Loot:OnSlotCleared(slot)
     elseif event == "LOOT_SLOT_CHANGED" then
         AL.Loot:Refresh()
+    elseif event == "LOOT_BIND_CONFIRM" then
+        local slot =
+            select(1, ...)
+
+        if AL.Loot then
+            AL.Loot:OnBindConfirm(slot)
+        end
     elseif event == "BAG_UPDATE" then
         if AL.BagHooks then
             AL.BagHooks:OnBagUpdate()
