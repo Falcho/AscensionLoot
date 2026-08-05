@@ -227,6 +227,10 @@ function Loot:ConfirmAward()
 end
 
 function Loot:OnSlotCleared(slot)
+    --------------------------------------------------
+    -- Item collected for later distribution
+    --------------------------------------------------
+
     if self.pendingCollection
         and self.pendingCollection.slot == slot
     then
@@ -248,22 +252,48 @@ function Loot:OnSlotCleared(slot)
         ))
     end
 
+    --------------------------------------------------
+    -- Untracked item assigned directly to the holder
+    --------------------------------------------------
+
     if self.pendingMasterLoot
         and self.pendingMasterLoot.slot == slot
     then
         self.pendingMasterLoot = nil
     end
+
+    --------------------------------------------------
+    -- Item awarded directly from the loot window
+    --------------------------------------------------
+
+    if self.pendingAward
+        and self.pendingAward.slot == slot
+    then
+        local award =
+            self.pendingAward
+
+        self.pendingAward = nil
+
         AL:AddHistory({
-            itemID = self.pendingAward.itemID,
-            itemLink = self.pendingAward.itemLink,
-            winner = self.pendingAward.playerName,
-            reason = self.pendingAward.reason,
-            winningRoll = self.pendingAward.winningRoll,
+            itemID = award.itemID,
+            itemLink = award.itemLink,
+            winner = award.playerName,
+            reason = award.reason,
+            winningRoll = award.winningRoll,
             masterLooter = UnitName("player"),
         })
-        AL:Print(string.format("Awarded %s to %s.", self.pendingAward.itemLink or "item", self.pendingAward.playerName))
-        self.pendingAward = nil
-        if AL.Roll.active and AL.Roll.active.item and AL.Roll.active.item.slot == slot then
+
+        AL:Print(string.format(
+            "Awarded %s to %s.",
+            award.itemLink or "item",
+            award.playerName or "Unknown"
+        ))
+
+        if AL.Roll
+            and AL.Roll.active
+            and AL.Roll.active.item
+            and AL.Roll.active.item.slot == slot
+        then
             AL.Roll.active = nil
         end
     end
