@@ -2,26 +2,33 @@
 
 Ascension Loot is a focused World of Warcraft 3.3.5a raid-loot addon for Ascension: Conquest of Azeroth.
 
-It is designed for raid groups that collect eligible loot on one designated holder, continue through several bosses, and distribute the accumulated items later. It combines BisBeard soft-reserve imports, persistent loot-session tracking, raid-time player-name matching, structured rolling, Group Loot and Master Loot workflows, and assisted trading.
+It is designed for raid groups that collect eligible loot on one designated holder, continue through several bosses, and distribute the accumulated items later. It combines BisBeard soft-reserve imports, persistent loot-session tracking, raid-time player-name matching, structured rolling, Master Loot and Group Loot workflows, configurable automation, and assisted trading.
 
 Ascension Loot does **not** include GDKP auctions, gold bidding, pots, cuts, balances, debts, or other GDKP functionality.
 
 ## Development status
 
-Current development version: **0.3.0**
+Current public-beta version: **0.4.0-beta.1**
 
-Version 0.3.0 expands the delayed-distribution workflow introduced in 0.2.0 and adds:
+This is a pre-release intended for raid testing and user feedback.
 
-- A movable minimap button
-- Automatic Master Loot collection to the loot holder
-- Group Loot bag detection
-- Verification that bag items are still inside the temporary raid-trade window
-- Raid-time correction and safe prefix matching of imported character names
-- Clickable item links in roll announcements
-- Assisted trade opening and trade-window filling
-- Verified completed-trade handling
-- Correct handling when the loot holder wins their own item
-- A more compact active-loot interface
+Version 0.4.0-beta.1 focuses on safer automation, clearer roll visibility, better data controls, and compatibility fixes.
+
+### Highlights in 0.4.0-beta.1
+
+- Configurable loot, roll, trade, autoloot, and interface settings
+- Roll-start announcements now include the total roll duration
+- Halfway raid warnings for roll timers longer than 10 seconds
+- Raid-warning countdown during the final five seconds
+- A confirmation-based **Clear History** action
+- `/al clearhistory`
+- Improved BisBeard import text area
+- **Clear Data** now clears both reserve data and the pasted import string
+- Separate **Load UI Demo** and **Clear UI Demo** controls
+- Demo data is isolated and can be removed without affecting real loot
+- Non-tradeable equipped gear is ignored when moved into the bags
+- Bag items must display the temporary raid-trade timer before being tracked or traded
+- Multiple World of Warcraft 3.3.5a compatibility and Lua error fixes
 
 Ascension-specific live testing is still recommended because the client contains custom server and interface behaviour.
 
@@ -42,17 +49,24 @@ The importer supports:
 - Hard-reserved items when included in the export
 - Persistent reserve data through SavedVariables
 
+The Import page contains a high-contrast, resizable text area. Pressing **Clear Data** clears:
+
+- Imported soft-reserve data
+- The pasted export string
+- The import scroll position
+- The visible import result
+
 ### Raid-time name resolution
 
-BisBeard exports player names exactly as entered by the user. Ascension Loot therefore resolves reserve names against the current raid roster when a roll starts.
+BisBeard exports player names exactly as entered by the user. Ascension Loot resolves reserve names against the current raid roster when a roll starts.
 
 Supported corrections include:
 
-- First-letter capitalization, such as `sylvannas` to `Sylvannas`
+- First-letter capitalization, such as `cathyrina` to `Cathyrina`
 - Case-insensitive exact matching
-- Safe unique-prefix matching, such as `Short` to `Shortenedname`
+- Safe unique-prefix matching, such as `Xqt` to `Xqtwitchdoctor`
 
-Prefix matching is only accepted when exactly one current group member matches. Ambiguous names are reported locally instead of being guessed.
+Prefix matching is accepted only when exactly one current group member matches. Ambiguous names are reported locally instead of being guessed.
 
 ### Persistent delayed distribution
 
@@ -81,22 +95,24 @@ Each tracked item may store:
 
 ### Master Loot collection
 
-When configured as the Master Looter, the addon can assign auto-looted items directly to the loot holder.
+When configured as the Master Looter, the addon can assign eligible loot directly to the loot holder.
 
-Tracked items are added to the persistent loot queue:
+Tracked items are added to the persistent loot queue according to the configured quality rules.
+
+Recommended defaults:
 
 - Epic items and higher
 - Rare Bind-on-Pickup items
 
-Lower-quality and otherwise untracked items can still be assigned to the holder without being added to the distribution queue.
+More aggressive Master Loot automation is available as an opt-in setting.
 
-Bind confirmations are only accepted for assignments initiated by Ascension Loot. The addon does not globally accept unrelated loot warnings.
+Bind confirmations are accepted only for assignments initiated by Ascension Loot. The addon does not globally accept unrelated loot warnings.
 
 ### Group Loot collection
 
 A raid may use Group Loot while every player except the designated loot holder passes.
 
-When an eligible item enters the holder's bags, Ascension Loot can add it to the persistent loot session. The bag watcher compares bag snapshots and verifies the specific item through its tooltip.
+When an eligible item enters the holder's bags, Ascension Loot compares bag snapshots and verifies the specific bag slot through its tooltip.
 
 Only items showing the temporary raid-trade timer are accepted. This prevents old soulbound equipment from appearing merely because it was unequipped between fights.
 
@@ -119,7 +135,7 @@ For supported bag items:
 
 Existing non-tradeable gear is rejected instead of being added to the loot session.
 
-### Roll management
+## Roll management
 
 Ascension Loot uses one combined roll session per item.
 
@@ -136,22 +152,54 @@ Soft Reserve > Main Spec > Off Spec
 
 Additional behaviour:
 
-- The addon classifies `/roll 100` as SR when the player reserved the item
+- `/roll 100` is classified as SR when the player reserved the item
 - Otherwise `/roll 100` is treated as MS
-- Duplicate soft reserves permit multiple roll attempts
+- Duplicate soft reserves can permit multiple roll attempts
 - A player can win no more than one copy in the same roll session
 - Multiple available copies select multiple unique winners
-- Boundary ties trigger a reroll only among the tied players
+- Boundary ties trigger a reroll only among tied players
 - Duplicate invalid rolls are rejected
 - One roll session can be active at a time
-- Start, countdown, tie, no-roll, and winner announcements are supported
 - Real item links remain clickable in chat
+- Tie rerolls use the same configured timer behaviour
 
-### Item assignment and trade assistance
+### Roll timer announcements
 
-After a winner is selected, the item enters one of two completed workflows.
+The configured roll duration is included in the initial roll announcement.
 
-#### Winner is another player
+For timers longer than 10 seconds:
+
+1. The roll starts and announces the full duration.
+2. A halfway message is sent when half the duration has passed.
+3. The final five seconds are counted down individually.
+
+For timers of 10 seconds or less:
+
+1. The roll starts and announces the full duration.
+2. No halfway warning is sent.
+3. The final five seconds are counted down individually.
+
+When the addon user is raid leader or assistant, halfway and countdown messages use `RAID_WARNING`. Otherwise they fall back to normal raid or party chat.
+
+When roll announcements are disabled in Settings, the information is shown locally instead.
+
+Example for a 30-second roll:
+
+```text
+Roll for [Item] — You have 30 seconds to roll.
+Halfway! 15 seconds remain to roll for [Item].
+5 seconds remaining!
+4 seconds remaining!
+3 seconds remaining!
+2 seconds remaining!
+1 second remaining!
+```
+
+## Item assignment and trade assistance
+
+After a winner is selected, the item enters one of two workflows.
+
+### Winner is another player
 
 The item becomes `awaiting_trade`.
 
@@ -162,18 +210,20 @@ Ascension Loot can:
 - Open the trade window
 - Find the correct temporarily tradeable bag copy
 - Place the item into the trade window
-- Wait for the players to accept the trade
+- Wait for both players to accept
 - Mark the item as traded only after the client reports a completed trade
 
 Cancelled or failed trades remain visible for another attempt.
 
-#### Winner is the loot holder
+Final trade acceptance remains manual.
+
+### Winner is the loot holder
 
 No trade is required.
 
-The item becomes `kept` and is removed from the active loot window while remaining in the persistent session/history.
+The item becomes `kept` and is removed from the active loot window while remaining in the persistent session and history.
 
-### Active loot-window states
+## Active loot-window states
 
 The active loot window shows items that still require action.
 
@@ -189,32 +239,154 @@ The active loot window shows items that still require action.
 
 Skip is available only for unassigned items.
 
-### Minimap button
+## Settings
 
-Version 0.3.0 adds a movable minimap button.
+The Settings page groups user-configurable behaviour into several sections.
+
+### Loot tracking
+
+- Track Rare Bind-on-Pickup items
+- Detect eligible Group Loot items
+- Open the loot window when tracked items are added
+
+### Master Loot
+
+- Automatically collect tracked loot
+- Auto-loot all Master Loot to the current Master Looter
+- Auto-confirm addon-initiated Bind-on-Pickup warnings
+
+The Bind-on-Pickup confirmation option is dependent on the full Master Loot automation setting.
+
+### Ordinary autoloot
+
+- Automatically loot coins
+- Automatically loot poor-quality items
+- Automatically loot common-quality items
+- Protect reserved items from ordinary autoloot
+
+### Rolls and announcements
+
+- Announce rolls to the group
+- Announce item assignments
+- Allow duplicate soft reserves to grant additional attempts
+- Confirm manual awards
+- Configure roll duration
+
+### Trade assistance
+
+- Automatically open trade
+- Automatically place the assigned item in the trade window
+- Announce completed trades
+
+### Interface
+
+- Show or hide the movable minimap button
+- Reset loot-window position
+- Reset settings-window position
+- Load demonstration data
+- Clear demonstration data
+
+### Recommended public-beta defaults
+
+```text
+Tracking
+[x] Track Rare Bind-on-Pickup items
+[x] Detect eligible Group Loot items
+[x] Open the loot window for tracked items
+
+Master Loot
+[x] Automatically collect tracked loot
+[ ] Auto-loot all Master Loot to me
+[ ] Auto-confirm addon Bind-on-Pickup warnings
+
+Rolls
+[x] Announce rolls
+[x] Announce item assignments
+[x] Duplicate soft reserves grant extra attempts
+[x] Confirm manual awards
+Roll duration: 30 seconds
+
+Trading
+[ ] Automatically open trade
+[x] Automatically place item in trade
+[ ] Announce completed trades
+
+Interface
+[x] Show minimap button
+```
+
+Safety checks such as tradeability validation, completed-trade verification, and ambiguous-name rejection are not optional settings.
+
+## Data management
+
+### Clear imported reserves
+
+The Import page's **Clear Data** button clears the imported reserve data and the pasted import string.
+
+### Clear history
+
+The History page contains **Clear History**.
+
+It opens a confirmation dialog and removes only loot history. It does not remove:
+
+- Active loot
+- Imported reserves
+- Settings
+- Window positions
+
+The same confirmation is available through:
+
+```text
+/al clearhistory
+```
+
+### UI demonstration data
+
+The Settings page contains:
+
+- **Load UI Demo**
+- **Clear UI Demo**
+
+Demo items and fictional players are marked as demonstration data.
+
+**Clear UI Demo** removes:
+
+- Visible demo items
+- Persistent demo-session entries
+- Active demo rolls
+- Demo trade references
+- Demo history entries
+
+Real loot, real history, settings, and imported reserves remain untouched.
+
+## Minimap button
+
+Ascension Loot includes a movable minimap button.
 
 - **Left click:** Open the loot window
 - **Right click:** Open Settings directly on the Import page
 - **Left-button drag:** Move the button around the current minimap
 
-The button is anchored to the actual `Minimap` frame rather than a fixed screen corner. It therefore follows minimap addons that move or resize the minimap. Its saved angular position is recalculated against the minimap's current dimensions.
+The button is anchored to the actual `Minimap` frame rather than a fixed screen corner. It follows minimap addons that move or resize the minimap and recalculates its saved position against the current minimap dimensions.
 
-### User interface
+The button can be hidden through Settings. Slash commands remain available while it is hidden.
+
+## User interface
 
 Ascension Loot uses two independent windows.
 
-#### Loot window
+### Loot window
 
 Contains:
 
 - Persistent active loot queue
 - Item icons and clickable links
 - Soft-reserve information
-- Roll state
+- Roll state and remaining time
 - Assignment and trade state
 - Roll, Award, Trade, and Skip controls
 
-#### Settings window
+### Settings window
 
 Contains tabs for:
 
@@ -233,13 +405,17 @@ Both windows are:
 
 ## Installation
 
-Copy the `AscensionLoot` folder into the Ascension client:
+Download **AscensionLoot.zip** from the GitHub release assets.
+
+Do not use GitHub's automatically generated **Source code** archives as the addon installer.
+
+Extract the archive into:
 
 ```text
-Interface\AddOns\AscensionLoot\
+Interface\AddOns\
 ```
 
-The final structure must resemble:
+The resulting structure must resemble:
 
 ```text
 Interface\AddOns\AscensionLoot\AscensionLoot.toc
@@ -280,9 +456,9 @@ Restart the client, enable the addon on the character-selection screen, and enab
 1. Enable Master Loot.
 2. Make the designated holder the Master Looter.
 3. Import BisBeard reserves.
-4. Auto-loot the corpse.
-5. Ascension Loot assigns items to the holder.
-6. Eligible tradeable items enter the persistent queue.
+4. Configure the desired Master Loot automation.
+5. Loot the corpse.
+6. Eligible items enter the persistent queue.
 7. Continue through additional bosses.
 8. Roll and trade the accumulated items later.
 
@@ -365,6 +541,12 @@ Clear imported soft reserves.
 Clear the persistent loot-session queue.
 
 ```text
+/al clearhistory
+```
+
+Open the Clear History confirmation.
+
+```text
 /al demo
 ```
 
@@ -401,7 +583,7 @@ AscensionLoot/
 ### File responsibilities
 
 `Core.lua`
-: Namespace, database defaults, shared helpers, version information, announcements, history, and common name/item functions.
+: Namespace, database defaults, shared helpers, version information, announcement routing, history, and common name/item functions.
 
 `Base64.lua`
 : Base64 decoding for BisBeard exports.
@@ -413,31 +595,31 @@ AscensionLoot/
 : Item parsing, Bind-on-Pickup detection, quality filtering, bag-item construction, and temporary tradeability tooltip scanning.
 
 `SoftReserve.lua`
-: BisBeard import transformation and reserve lookup.
+: BisBeard import transformation, demo reserves, and reserve lookup.
 
 `LootSession.lua`
-: Persistent collected-loot state, assignment, traded state, and self-kept state.
+: Persistent collected-loot state, assignment, traded state, self-kept state, and demo identification.
 
 `TradeManager.lua`
 : Trade queue, player lookup, bag-copy validation, trade opening, trade filling, and completed-trade verification.
 
 `RollManager.lua`
-: Roll sessions, raid-name resolution, system-message parsing, priorities, duplicate reserves, ties, multiple copies, and winner selection.
+: Roll sessions, raid-name resolution, system-message parsing, priorities, duplicate reserves, ties, multiple copies, timer warnings, and winner selection.
 
 `LootManager.lua`
-: Loot-window reading, Master Loot collection, warning confirmation, direct assignment, and automatic loot processing.
+: Loot-window reading, Master Loot collection, warning confirmation, direct assignment, automatic loot processing, and demonstration-data cleanup.
 
 `BagHooks.lua`
 : Bag snapshots, Group Loot registration, tradeability validation, and modifier-click handling.
 
 `UI.lua`
-: Loot and settings windows, tabs, compact item rows, buttons, resizing, scaling, and refresh logic.
+: Loot and settings windows, tabs, compact item rows, grouped settings, import controls, history controls, demo controls, resizing, scaling, and refresh logic.
 
 `MinimapButton.lua`
-: Movable minimap launcher and persistent minimap-relative positioning.
+: Movable minimap launcher, visibility setting, and persistent minimap-relative positioning.
 
 `Events.lua`
-: Event registration, login initialization, loot events, bag updates, trade events, and slash commands.
+: Event registration, login initialization, loot events, bag updates, trade events, slash commands, and error handling.
 
 ## SavedVariables
 
@@ -462,15 +644,17 @@ Do not edit the SavedVariables file while the game is running.
 ## Known limitations
 
 - The addon targets the World of Warcraft 3.3.5a API on Ascension's customised client.
+- This is a public beta and may contain undiscovered Ascension-specific issues.
 - Only one roll session can be active at a time.
 - Bag modifier-click support primarily targets the standard Blizzard container interface.
 - Some custom all-in-one bag addons may require additional hooks.
 - The addon cannot press the final trade acceptance button for the player.
 - Temporary tradeability is determined from the item's current tooltip and remains server-authoritative.
 - The designated loot holder must run the addon for local bag tracking and trade assistance.
-- Group Loot registration only sees items entering the local holder's bags.
+- Group Loot registration sees only items entering the local holder's bags.
 - Imported-name prefix matching deliberately refuses ambiguous matches.
-- Local SavedVariables are not a cross-client synchronization system.
+- `RAID_WARNING` requires raid leader or assistant permissions.
+- Local SavedVariables are not a cross-client synchronisation system.
 
 ## Safety behaviour
 
@@ -486,6 +670,18 @@ It checks relevant conditions such as:
 - Active temporary raid-trade tooltip
 - Completed trade confirmation
 - Unique imported-name prefix match
+
+## Reporting feedback
+
+When reporting a problem, include:
+
+- The addon version
+- Whether the raid used Master Loot or Group Loot
+- What action was being performed
+- The complete Lua error
+- Steps that reproduce the issue
+- Relevant screenshots
+- Any bag, minimap, or interface addons involved
 
 ## Non-goals
 
