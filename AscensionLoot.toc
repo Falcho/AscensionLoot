@@ -2,7 +2,7 @@
 ## Title: Ascension Loot
 ## Notes: Master-loot, rolling and BisBeard soft reserves for 3.3.5a
 ## Author: Falcho
-## Version: 0.3.0
+## Version: 0.3.0-beta.1
 ## SavedVariables: AscensionLootDB
 
 Core.lua
