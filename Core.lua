@@ -2,7 +2,7 @@ AscensionLoot = AscensionLoot or {}
 local AL = AscensionLoot
 
 AL.name = "Ascension Loot"
-AL.version = "0.2.0"
+AL.version = "0.3.0-beta.1"
 AL.prefix = "|cff33ff99Ascension Loot:|r "
 
 local chatQueue = {}
