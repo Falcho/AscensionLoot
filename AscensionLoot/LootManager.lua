@@ -3,6 +3,47 @@ local AL = AscensionLoot
 AL.Loot = AL.Loot or {}
 local Loot = AL.Loot
 
+local function isDemoItem(item)
+    if not item then
+        return false
+    end
+
+    if item.demo == true
+        or item.source == "demo"
+        or item.registrationSource == "demo"
+    then
+        return true
+    end
+
+    local name =
+        item.name
+        or item.itemName
+
+    if type(name) == "string"
+        and string.find(
+            name,
+            "^Demo:"
+        )
+    then
+        return true
+    end
+
+    local link =
+        item.link
+        or item.itemLink
+
+    if type(link) == "string"
+        and string.find(
+            link,
+            "%[Demo:"
+        )
+    then
+        return true
+    end
+
+    return false
+end
+
 Loot.items = {}
 Loot.pendingAward = nil
 Loot.confirmData = nil
@@ -738,13 +779,341 @@ function Loot:OnUpdate()
 end
 
 function Loot:LoadDemo()
+    -- Remove remnants from an earlier demo before
+    -- creating another set.
+    self:ClearDemo(true)
+
     AL.SoftReserve:LoadDemo()
+
     self.demo = true
     self.isOpen = false
+
     self.items = {
-        { slot = 1, id = 12504, link = "|cffa335ee|Hitem:12504:0:0:0:0:0:0:0|h[Demo: Shared Soft Reserve]|h|r", name = "Demo: Shared Soft Reserve", icon = "Interface\\Icons\\INV_Misc_QuestionMark", quality = 4, quantity = 1, demo = true },
-        { slot = 2, id = 19857, link = "|cffa335ee|Hitem:19857:0:0:0:0:0:0:0|h[Demo: Double Reserve]|h|r", name = "Demo: Double Reserve", icon = "Interface\\Icons\\INV_Misc_QuestionMark", quality = 4, quantity = 1, demo = true },
-        { slot = 3, id = 999999, link = "|cff0070dd|Hitem:999999:0:0:0:0:0:0:0|h[Demo: Open Roll Item]|h|r", name = "Demo: Open Roll Item", icon = "Interface\\Icons\\INV_Misc_QuestionMark", quality = 3, quantity = 1, demo = true },
+        {
+            source = "demo",
+            demo = true,
+            slot = 1,
+            id = 12504,
+
+            link =
+                "|cffa335ee"
+                .. "|Hitem:12504:0:0:0:0:0:0:0"
+                .. "|h[Demo: Shared Soft Reserve]"
+                .. "|h|r",
+
+            name =
+                "Demo: Shared Soft Reserve",
+
+            icon =
+                "Interface\\Icons\\"
+                .. "INV_Misc_QuestionMark",
+
+            quality = 4,
+            quantity = 1,
+        },
+
+        {
+            source = "demo",
+            demo = true,
+            slot = 2,
+            id = 19857,
+
+            link =
+                "|cffa335ee"
+                .. "|Hitem:19857:0:0:0:0:0:0:0"
+                .. "|h[Demo: Double Reserve]"
+                .. "|h|r",
+
+            name =
+                "Demo: Double Reserve",
+
+            icon =
+                "Interface\\Icons\\"
+                .. "INV_Misc_QuestionMark",
+
+            quality = 4,
+            quantity = 1,
+        },
+
+        {
+            source = "demo",
+            demo = true,
+            slot = 3,
+            id = 999999,
+
+            link =
+                "|cff0070dd"
+                .. "|Hitem:999999:0:0:0:0:0:0:0"
+                .. "|h[Demo: Open Roll Item]"
+                .. "|h|r",
+
+            name =
+                "Demo: Open Roll Item",
+
+            icon =
+                "Interface\\Icons\\"
+                .. "INV_Misc_QuestionMark",
+
+            quality = 3,
+            quantity = 1,
+        },
     }
-    if AL.UI then AL.UI:Show("loot") AL.UI:RefreshAll() end
+
+    if AL.UI then
+        AL.UI:Show("loot")
+        AL.UI:RefreshAll()
+    end
+end
+
+function Loot:ClearDemo(silent)
+    local visibleRemoved = 0
+    local sessionRemoved = 0
+    local historyRemoved = 0
+
+    --------------------------------------------------
+    -- Remove visible demo loot
+    --------------------------------------------------
+
+    for index =
+        #(self.items or {}),
+        1,
+        -1
+    do
+        local item =
+            self.items[index]
+
+        if isDemoItem(item) then
+            table.remove(
+                self.items,
+                index
+            )
+
+            visibleRemoved =
+                visibleRemoved + 1
+        end
+    end
+
+    --------------------------------------------------
+    -- Remove persistent demo-session entries
+    --------------------------------------------------
+
+    if AL.db
+        and AL.db.lootSession
+        and AL.db.lootSession.items
+    then
+        for index =
+            #AL.db.lootSession.items,
+            1,
+            -1
+        do
+            local entry =
+                AL.db.lootSession.items[
+                    index
+                ]
+
+            if isDemoItem(entry) then
+                table.remove(
+                    AL.db.lootSession.items,
+                    index
+                )
+
+                sessionRemoved =
+                    sessionRemoved + 1
+            end
+        end
+    end
+
+    --------------------------------------------------
+    -- Remove demo history entries
+    --------------------------------------------------
+
+    if AL.db
+        and AL.db.history
+    then
+        for index =
+            #AL.db.history,
+            1,
+            -1
+        do
+            local historyEntry =
+                AL.db.history[index]
+
+            if isDemoItem(
+                historyEntry
+            ) then
+                table.remove(
+                    AL.db.history,
+                    index
+                )
+
+                historyRemoved =
+                    historyRemoved + 1
+            end
+        end
+    end
+
+    --------------------------------------------------
+    -- Cancel an active demo roll
+    --------------------------------------------------
+
+    if AL.Roll
+        and AL.Roll.active
+        and isDemoItem(
+            AL.Roll.active.item
+        )
+    then
+        AL.Roll.active = nil
+    end
+
+    --------------------------------------------------
+    -- Clear pending demo loot operations
+    --------------------------------------------------
+
+    if self.confirmData
+        and isDemoItem(
+            self.confirmData.item
+        )
+    then
+        self.confirmData = nil
+    end
+
+    if self.pendingCollection
+        and isDemoItem(
+            self.pendingCollection.item
+        )
+    then
+        self.pendingCollection = nil
+    end
+
+    if self.pendingMasterLoot
+        and isDemoItem({
+            link =
+                self.pendingMasterLoot
+                    .itemLink,
+        })
+    then
+        self.pendingMasterLoot = nil
+    end
+
+    if self.pendingAward
+        and isDemoItem({
+            link =
+                self.pendingAward
+                    .itemLink,
+        })
+    then
+        self.pendingAward = nil
+    end
+
+    --------------------------------------------------
+    -- Remove demo references from trade assistance
+    --------------------------------------------------
+
+    if AL.Trade then
+        if isDemoItem(
+            AL.Trade.requestedEntry
+        )
+        then
+            AL.Trade.requestedEntry =
+                nil
+
+            AL.Trade.requestedWinner =
+                nil
+
+            AL.Trade.tradeTarget =
+                nil
+        end
+
+        for index =
+            #(AL.Trade.filledEntries or {}),
+            1,
+            -1
+        do
+            local value =
+                AL.Trade.filledEntries[
+                    index
+                ]
+
+            if value
+                and isDemoItem(
+                    value.entry
+                )
+            then
+                table.remove(
+                    AL.Trade.filledEntries,
+                    index
+                )
+            end
+        end
+
+        for index =
+            #(AL.Trade.pendingVerification or {}),
+            1,
+            -1
+        do
+            local value =
+                AL.Trade.pendingVerification[
+                    index
+                ]
+
+            if value
+                and isDemoItem(
+                    value.entry
+                )
+            then
+                table.remove(
+                    AL.Trade.pendingVerification,
+                    index
+                )
+            end
+        end
+    end
+
+    --------------------------------------------------
+    -- Leave demo mode and restore real reserves
+    --------------------------------------------------
+
+    self.demo = false
+
+    if AL.SoftReserve
+        and AL.SoftReserve
+            .LoadFromDatabase
+    then
+        AL.SoftReserve:
+            LoadFromDatabase()
+    end
+
+    --------------------------------------------------
+    -- Refresh the interface
+    --------------------------------------------------
+
+    if AL.UI then
+        AL.UI:RefreshAll()
+    end
+
+    if not silent then
+        local totalRemoved =
+            visibleRemoved
+            + sessionRemoved
+
+        if totalRemoved == 0
+            and historyRemoved == 0
+        then
+            AL:Print(
+                "No UI demo data was found."
+            )
+        else
+            AL:Print(string.format(
+                "Cleared %d demo item %s and %d demo history %s.",
+                totalRemoved,
+                totalRemoved == 1
+                    and "entry"
+                    or "entries",
+                historyRemoved,
+                historyRemoved == 1
+                    and "entry"
+                    or "entries"
+            ))
+        end
+    end
 end

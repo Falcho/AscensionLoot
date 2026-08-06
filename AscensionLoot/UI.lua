@@ -2254,7 +2254,7 @@ function UI:CreateSettingsPanel(panel)
     local demo =
         createButton(
             panel,
-            "Load UI Demo",
+            "Load UI demo",
             125,
             26
         )
@@ -2274,10 +2274,37 @@ function UI:CreateSettingsPanel(panel)
         end
     )
 
+    local clearDemo =
+    createButton(
+        panel,
+        "Clear UI demo",
+        125,
+        26
+    )
+
+    clearDemo:SetPoint(
+        "TOPLEFT",
+        demo,
+        "BOTTOMLEFT",
+        0,
+        -8
+    )
+
+    clearDemo:SetScript(
+        "OnClick",
+        function()
+            if AL.Loot
+                and AL.Loot.ClearDemo
+            then
+                AL.Loot:ClearDemo()
+            end
+        end
+    )
+
     local resetLoot =
         createButton(
             panel,
-            "Reset Loot Window",
+            "Reset loot window size and position",
             145,
             26
         )
@@ -2326,7 +2353,7 @@ function UI:CreateSettingsPanel(panel)
     local resetSettings =
         createButton(
             panel,
-            "Reset Settings Window",
+            "Reset Settings Window size and position",
             160,
             26
         )

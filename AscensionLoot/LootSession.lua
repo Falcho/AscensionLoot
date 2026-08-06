@@ -25,7 +25,22 @@ end
 function Session:AddCollected(item, holderName)
     local entry = {
         sessionID = self:CreateID(),
-        source = "session",
+
+        source =
+            item.demo
+            and "demo"
+            or "session",
+
+        demo =
+            item.demo == true,
+
+        registrationSource =
+            item.registrationSource
+            or (
+                item.demo
+                and "demo"
+                or nil
+            ),
 
         id = item.id,
         itemID = item.id,
