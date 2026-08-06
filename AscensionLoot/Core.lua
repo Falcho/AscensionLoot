@@ -15,32 +15,62 @@ chatFrame:Hide()
 
 local defaults = {
     settings = {
+        --------------------------------------------------
+        -- Rolls and announcements
+        --------------------------------------------------
+
         announceRolls = true,
         announceAssignments = true,
-        rollDuration = 12,
+        announceCompletedTrades = false,
+
+        rollDuration = 30,
         confirmAwards = true,
         duplicateReservesGiveExtraRolls = true,
 
+        --------------------------------------------------
+        -- Master Loot
+        --------------------------------------------------
+
         autoCollectTrackedLoot = true,
-        autoMasterLootToSelf = true,
-        autoConfirmMasterLootToSelf = true,
-        
+
+        -- More aggressive automation is disabled for
+        -- new public-beta installations.
+        autoMasterLootToSelf = false,
+        autoConfirmMasterLootToSelf = false,
+
         lootHolderMode = "MASTER_LOOTER",
         lootHolderName = "",
 
+        --------------------------------------------------
+        -- Item tracking
+        --------------------------------------------------
 
         minimumTrackedQuality = 4,
         trackRareBindOnPickup = true,
         trackEligibleBagLoot = true,
 
-        autoOpenTrade = true,
+        --------------------------------------------------
+        -- Trade assistance
+        --------------------------------------------------
+
+        autoOpenTrade = false,
         autoFillTrade = true,
+
+        --------------------------------------------------
+        -- Ordinary autoloot
+        --------------------------------------------------
 
         autoLootCoins = true,
         autoLootPoor = true,
         autoLootCommon = true,
         protectReservedItems = true,
+
+        --------------------------------------------------
+        -- Interface
+        --------------------------------------------------
+
         autoShowLoot = true,
+        showMinimapButton = true,
     },
     softres = {
         raw = nil,
@@ -652,6 +682,27 @@ function AL:Announce(text)
 
     -- Keep hyperlinks clickable in local test output.
     self:Print(text)
+end
+
+function AL:AnnounceRoll(text)
+    if type(text) ~= "string"
+        or text == ""
+    then
+        return
+    end
+
+    if self.db
+        and self.db.settings
+        and self.db.settings
+            .announceRolls == false
+    then
+        -- Keep the information visible to the
+        -- addon user without sending group chat.
+        self:Print(text)
+        return
+    end
+
+    self:Announce(text)
 end
 
 function AL:AnnounceTrade(text)

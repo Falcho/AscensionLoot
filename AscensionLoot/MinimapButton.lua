@@ -161,6 +161,26 @@ function MinimapButton:UpdatePosition()
     )
 end
 
+function MinimapButton:RefreshVisibility()
+    if not self.button then
+        return
+    end
+
+    local shouldShow =
+        not AL.db
+        or not AL.db.settings
+        or AL.db.settings
+            .showMinimapButton
+            ~= false
+
+    if shouldShow then
+        self.button:Show()
+        self:UpdatePosition()
+    else
+        self.button:Hide()
+    end
+end
+
 function MinimapButton:UpdateFromCursor()
     if not Minimap then
         return
@@ -563,4 +583,5 @@ function MinimapButton:Initialize()
         refreshFrame
 
     self:UpdatePosition()
+    self:RefreshVisibility()
 end

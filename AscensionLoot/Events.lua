@@ -119,6 +119,7 @@ local function showHelp()
     AL:Print("/al finish | cancel — control the active roll")
     AL:Print("/al trade — trade the next awarded item")
     AL:Print("/al clear — clear imported soft reserves")
+    AL:Print("/al clearhistory — clear recorded loot history")
     AL:Print("/al demo — load a safe UI demo")
 end
 
@@ -142,6 +143,11 @@ SlashCmdList["ASCENSIONLOOT"] = function(message)
     elseif command == "trade" then
         if AL.Trade then
             AL.Trade:TryStart()
+        end
+    elseif command == "clearhistory" then
+        if AL.UI then
+            AL.UI:
+                ShowClearHistoryConfirmation()
         end
     elseif command == "help" then
         showHelp()

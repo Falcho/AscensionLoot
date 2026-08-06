@@ -496,7 +496,7 @@ function Roll:BeginTie(tiedResults)
     active.message =
         "Tie between " .. table.concat(names, ", ")
 
-    AL:Announce(string.format(
+    AL:AnnounceRoll(string.format(
         "Tie between %s for %s. Reroll /roll %d.",
         table.concat(names, ", "),
         AL:GetAnnouncementItemText(
@@ -559,7 +559,7 @@ function Roll:StartForItem(item)
         reserveNameResolutions
     )
 
-    AL:Announce(string.format(
+    AL:AnnounceRoll(string.format(
         "Roll for %s — %d %s available. "
             .. "SR/MS: /roll 100. "
             .. "OS: /roll 99. "
@@ -749,7 +749,7 @@ function Roll:Finish()
         active.proposedWinners = {}
         active.message = "No valid rolls"
 
-        AL:Announce(string.format(
+        AL:AnnounceRoll(string.format(
             "Rolling has finished. No valid rolls for %s.",
             AL:GetAnnouncementItemText(
                 active.item
@@ -830,7 +830,7 @@ function Roll:Finish()
         winnerWord = "winners"
     end
 
-    AL:Announce(string.format(
+    AL:AnnounceRollRollRoll(string.format(
         "Rolling has finished, %s %s: %s.",
         AL:GetAnnouncementItemText(
             active.item
@@ -940,7 +940,7 @@ function Roll:OnUpdate()
     then
         active.countdownAnnounced[remaining] = true
 
-        AL:Announce(
+        AL:AnnounceRoll(
             tostring(remaining)
         )
     end

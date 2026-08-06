@@ -105,13 +105,19 @@ function Loot:OnOpened(autoLoot)
     self.autoLooting =
         autoLoot == 1
         or autoLoot == true
+
     self.pendingAward = nil
+    self.pendingCollection = nil
+    self.pendingMasterLoot = nil
+
     self:Refresh()
-    self.BuildCollectionQueue()
+    self:BuildCollectionQueue()
     self:BuildAutoQueue()
 
-    if AL.db.settings.autoShowLoot and AL.UI then
-        AL.UI:Show("loot")
+    if AL.db.settings.autoShowLoot
+        and AL.UI
+    then
+        AL.UI:ShowLoot()
     end
 end
 

@@ -20,19 +20,198 @@ local function createButton(parent, text, width, height)
     return button
 end
 
-local function createCheckbox(parent, label, settingKey, y)
-    local checkbox = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-    checkbox:SetPoint("TOPLEFT", parent, "TOPLEFT", 18, y)
+StaticPopupDialogs[
+    "ASCENSIONLOOT_CLEAR_HISTORY"
+] = {
+    text =
+        "Clear all loot history?\n\n"
+        .. "This permanently removes %s entries. "
+        .. "Active loot, imported reserves and "
+        .. "settings are not affected.",
+
+    button1 = "Clear History",
+    button2 = CANCEL,
+
+    OnAccept = function()
+        if not AL.db then
+            return
+        end
+
+        AL.db.history =
+            AL.db.history or {}
+
+        local removed =
+            #AL.db.history
+
+        wipe(
+            AL.db.history
+        )
+
+        if AL.UI then
+            AL.UI:RefreshHistory()
+        end
+
+        AL:Print(string.format(
+            "Cleared %d history %s.",
+            removed,
+            removed == 1
+                and "entry"
+                or "entries"
+        ))
+    end,
+
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+    preferredIndex = 3,
+}
+
+local function createCheckbox(
+    parent,
+    label,
+    settingKey,
+    x,
+    y,
+    tooltip,
+    onChanged
+)
+    local checkbox =
+        CreateFrame(
+            "CheckButton",
+            nil,
+            parent,
+            "UICheckButtonTemplate"
+        )
+
+    checkbox:SetPoint(
+        "TOPLEFT",
+        parent,
+        "TOPLEFT",
+        x or 18,
+        y or -10
+    )
+
     checkbox:SetWidth(26)
     checkbox:SetHeight(26)
-    checkbox.text = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    checkbox.text:SetPoint("LEFT", checkbox, "RIGHT", 3, 0)
+
+    checkbox.text =
+        parent:CreateFontString(
+            nil,
+            "OVERLAY",
+            "GameFontNormal"
+        )
+
+    checkbox.text:SetPoint(
+        "LEFT",
+        checkbox,
+        "RIGHT",
+        3,
+        0
+    )
+
+    checkbox.text:SetWidth(250)
+    checkbox.text:SetJustifyH("LEFT")
     checkbox.text:SetText(label)
-    checkbox:SetScript("OnClick", function(self)
-        AL.db.settings[settingKey] = self:GetChecked() and true or false
-    end)
-    checkbox.settingKey = settingKey
+
+    checkbox.settingKey =
+        settingKey
+
+    checkbox.tooltip =
+        tooltip
+
+    checkbox:SetScript(
+        "OnClick",
+        function(self)
+            local enabled =
+                self:GetChecked()
+                and true
+                or false
+
+            AL.db.settings[settingKey] =
+                enabled
+
+            if onChanged then
+                onChanged(
+                    enabled,
+                    self
+                )
+            end
+
+            if AL.UI
+                and AL.UI.RefreshSettings
+            then
+                AL.UI:RefreshSettings()
+            end
+        end
+    )
+
+    checkbox:SetScript(
+        "OnEnter",
+        function(self)
+            if not self.tooltip
+                or self.tooltip == ""
+            then
+                return
+            end
+
+            GameTooltip:SetOwner(
+                self,
+                "ANCHOR_RIGHT"
+            )
+
+            GameTooltip:SetText(
+                label,
+                1,
+                0.82,
+                0
+            )
+
+            GameTooltip:AddLine(
+                self.tooltip,
+                1,
+                1,
+                1,
+                true
+            )
+
+            GameTooltip:Show()
+        end
+    )
+
+    checkbox:SetScript(
+        "OnLeave",
+        function()
+            GameTooltip:Hide()
+        end
+    )
+
     return checkbox
+end
+
+local function createSectionTitle(
+    parent,
+    text,
+    x,
+    y
+)
+    local title =
+        parent:CreateFontString(
+            nil,
+            "OVERLAY",
+            "GameFontNormalLarge"
+        )
+
+    title:SetPoint(
+        "TOPLEFT",
+        parent,
+        "TOPLEFT",
+        x,
+        y
+    )
+
+    title:SetText(text)
+
+    return title
 end
 
 local function saveWindowGeometry(frame, databaseKey)
@@ -304,8 +483,8 @@ function UI:CreateSettingsFrame()
         "AscensionLootSettingsFrame",
         "Ascension Loot — Settings",
         "settings",
-        560,
-        420
+        650,
+        520
     )
 
     self.settingsFrame = frame
@@ -1176,60 +1355,469 @@ function UI:RefreshReserves()
 end
 
 function UI:CreateImportPanel(panel)
-    local help = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    help:SetPoint("TOPLEFT", panel, "TOPLEFT", 5, -5)
-    help:SetText("Paste BisBeard's RollFor export below, then click Import.")
+    --------------------------------------------------
+    -- Help text
+    --------------------------------------------------
 
-    local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -32)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 80)
+    local help =
+        panel:CreateFontString(
+            nil,
+            "OVERLAY",
+            "GameFontHighlight"
+        )
 
-    local edit = CreateFrame("EditBox", nil, scroll)
+    help:SetPoint(
+        "TOPLEFT",
+        panel,
+        "TOPLEFT",
+        5,
+        -5
+    )
+
+    help:SetText(
+        "Paste BisBeard's RollFor export below, then click Import."
+    )
+
+    --------------------------------------------------
+    -- Import text area
+    --------------------------------------------------
+
+    local scroll =
+        CreateFrame(
+            "ScrollFrame",
+            nil,
+            panel,
+            "UIPanelScrollFrameTemplate"
+        )
+
+    scroll:SetPoint(
+        "TOPLEFT",
+        panel,
+        "TOPLEFT",
+        0,
+        -32
+    )
+
+    scroll:SetPoint(
+        "BOTTOMRIGHT",
+        panel,
+        "BOTTOMRIGHT",
+        -30,
+        80
+    )
+
+    -- Give the text area a clearly visible background.
+    scroll:SetBackdrop({
+        bgFile =
+            "Interface\\Tooltips\\UI-Tooltip-Background",
+
+        edgeFile =
+            "Interface\\Tooltips\\UI-Tooltip-Border",
+
+        tile = true,
+        tileSize = 16,
+        edgeSize = 12,
+
+        insets = {
+            left = 3,
+            right = 3,
+            top = 3,
+            bottom = 3,
+        },
+    })
+
+    scroll:SetBackdropColor(
+        0.02,
+        0.02,
+        0.02,
+        0.95
+    )
+
+    scroll:SetBackdropBorderColor(
+        0.55,
+        0.55,
+        0.55,
+        1
+    )
+
+    local edit =
+        CreateFrame(
+            "EditBox",
+            nil,
+            scroll
+        )
+
     edit:SetMultiLine(true)
     edit:SetAutoFocus(false)
     edit:SetFontObject(ChatFontNormal)
+
     edit:SetWidth(610)
     edit:SetHeight(340)
-    edit:SetTextInsets(8, 8, 8, 8)
-    edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    edit:SetScript("OnTextChanged", function(self)
-        local height = math.max(340, self:GetStringHeight() + 30)
-        self:SetHeight(height)
-    end)
+
+    edit:SetTextInsets(
+        8,
+        8,
+        8,
+        8
+    )
+
+    edit:SetTextColor(
+        1,
+        1,
+        1
+    )
+
+    edit:SetJustifyH("LEFT")
+    edit:SetJustifyV("TOP")
+
+    edit:SetScript(
+        "OnEscapePressed",
+        function(self)
+            self:ClearFocus()
+        end
+    )
+
+    --------------------------------------------------
+    -- 3.3.5-compatible height calculation
+    --------------------------------------------------
+
+    local function updateEditHeight()
+        local text =
+            edit:GetText()
+            or ""
+
+        local availableWidth =
+            math.max(
+                (edit:GetWidth() or 610) - 20,
+                100
+            )
+
+        -- Approximate the number of characters fitting
+        -- on a line using ChatFontNormal.
+        local charactersPerLine =
+            math.max(
+                math.floor(
+                    availableWidth / 6
+                ),
+                1
+            )
+
+        local visualLineCount = 0
+
+        -- Appending a newline ensures that the final
+        -- line is included in the calculation.
+        for line in (
+            text .. "\n"
+        ):gmatch("(.-)\n") do
+            visualLineCount =
+                visualLineCount
+                + math.max(
+                    1,
+                    math.ceil(
+                        #line
+                        / charactersPerLine
+                    )
+                )
+        end
+
+        local calculatedHeight =
+            visualLineCount * 14 + 30
+
+        edit:SetHeight(
+            math.max(
+                340,
+                calculatedHeight
+            )
+        )
+    end
+
+    edit:SetScript(
+        "OnTextChanged",
+        function()
+            updateEditHeight()
+        end
+    )
+
     scroll:SetScrollChild(edit)
+
+    -- Adapt the edit box to resized Settings windows.
+    scroll:SetScript(
+        "OnSizeChanged",
+        function(self)
+            local width =
+                self:GetWidth()
+
+            if width
+                and width > 40
+            then
+                edit:SetWidth(
+                    width - 12
+                )
+
+                updateEditHeight()
+            end
+        end
+    )
+
     panel.edit = edit
+    panel.importScroll = scroll
 
-    panel.import = createButton(panel, "Import", 100, 25)
-    panel.import:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 5, 40)
-    panel.import:SetScript("OnClick", function()
-        local success, message = AL.SoftReserve:Import(panel.edit:GetText())
-        panel.status:SetText(message or "")
-        if success then AL:Print(message) else AL:Print(message, 1, 0.3, 0.3) end
-    end)
+    --------------------------------------------------
+    -- Import button
+    --------------------------------------------------
 
-    panel.clear = createButton(panel, "Clear Data", 100, 25)
-    panel.clear:SetPoint("LEFT", panel.import, "RIGHT", 10, 0)
-    panel.clear:SetScript("OnClick", function()
-        AL.SoftReserve:Clear()
-        panel.status:SetText("Soft-reserve data cleared.")
-    end)
+    panel.import =
+        createButton(
+            panel,
+            "Import",
+            100,
+            25
+        )
 
-    panel.status = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.status:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 5, 8)
-    panel.status:SetPoint("RIGHT", panel, "RIGHT", -5, 0)
+    panel.import:SetPoint(
+        "BOTTOMLEFT",
+        panel,
+        "BOTTOMLEFT",
+        5,
+        40
+    )
+
+    panel.import:SetScript(
+        "OnClick",
+        function()
+            local importText =
+                panel.edit:GetText()
+                or ""
+
+            if AL:Trim(importText) == "" then
+                local message =
+                    "Paste a BisBeard RollFor export before importing."
+
+                panel.status:SetText(
+                    message
+                )
+
+                AL:Print(
+                    message,
+                    1,
+                    0.3,
+                    0.3
+                )
+
+                return
+            end
+
+            local success,
+                message =
+                AL.SoftReserve:Import(
+                    importText
+                )
+
+            panel.status:SetText(
+                message or ""
+            )
+
+            if success then
+                AL:Print(message)
+            else
+                AL:Print(
+                    message,
+                    1,
+                    0.3,
+                    0.3
+                )
+            end
+        end
+    )
+
+    --------------------------------------------------
+    -- Clear Data button
+    --------------------------------------------------
+
+    panel.clear =
+        createButton(
+            panel,
+            "Clear Data",
+            100,
+            25
+        )
+
+    panel.clear:SetPoint(
+        "LEFT",
+        panel.import,
+        "RIGHT",
+        10,
+        0
+    )
+
+    panel.clear:SetScript(
+        "OnClick",
+        function()
+            --------------------------------------------------
+            -- Clear imported reserve data
+            --------------------------------------------------
+
+            if AL.SoftReserve
+                and AL.SoftReserve.Clear
+            then
+                AL.SoftReserve:Clear()
+            end
+
+            --------------------------------------------------
+            -- Clear the pasted import string
+            --------------------------------------------------
+
+            panel.edit:SetText("")
+            panel.edit:ClearFocus()
+
+            panel.importScroll:
+                SetVerticalScroll(0)
+
+            updateEditHeight()
+
+            --------------------------------------------------
+            -- Refresh other panels using reserve data
+            --------------------------------------------------
+
+            if UI.RefreshAll then
+                UI:RefreshAll()
+            end
+
+            panel.status:SetText(
+                "Soft-reserve data and import text cleared."
+            )
+
+            AL:Print(
+                "Soft-reserve data and import text cleared."
+            )
+        end
+    )
+
+    --------------------------------------------------
+    -- Status text
+    --------------------------------------------------
+
+    panel.status =
+        panel:CreateFontString(
+            nil,
+            "OVERLAY",
+            "GameFontHighlightSmall"
+        )
+
+    panel.status:SetPoint(
+        "BOTTOMLEFT",
+        panel,
+        "BOTTOMLEFT",
+        5,
+        8
+    )
+
+    panel.status:SetPoint(
+        "RIGHT",
+        panel,
+        "RIGHT",
+        -5,
+        0
+    )
+
     panel.status:SetJustifyH("LEFT")
+
+    --------------------------------------------------
+    -- Initial layout
+    --------------------------------------------------
+
+    updateEditHeight()
+end
+
+function UI:ShowClearHistoryConfirmation()
+    local history =
+        AL.db
+        and AL.db.history
+        or {}
+
+    local count =
+        #history
+
+    if count == 0 then
+        AL:Print(
+            "Loot history is already empty."
+        )
+
+        return
+    end
+
+    StaticPopup_Show(
+        "ASCENSIONLOOT_CLEAR_HISTORY",
+        tostring(count)
+    )
 end
 
 function UI:CreateHistoryPanel(panel)
-    local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 0)
-    local child = CreateFrame("Frame", nil, scroll)
+    local scroll =
+        CreateFrame(
+            "ScrollFrame",
+            nil,
+            panel,
+            "UIPanelScrollFrameTemplate"
+        )
+
+    scroll:SetPoint(
+        "TOPLEFT",
+        panel,
+        "TOPLEFT",
+        0,
+        0
+    )
+
+    -- Leave room for the Clear History button.
+    scroll:SetPoint(
+        "BOTTOMRIGHT",
+        panel,
+        "BOTTOMRIGHT",
+        -30,
+        38
+    )
+
+    local child =
+        CreateFrame(
+            "Frame",
+            nil,
+            scroll
+        )
+
     child:SetWidth(620)
     child:SetHeight(1)
-    scroll:SetScrollChild(child)
+
+    scroll:SetScrollChild(
+        child
+    )
+
     panel.child = child
     panel.lines = {}
+
+    panel.clearHistory =
+        createButton(
+            panel,
+            "Clear History",
+            120,
+            26
+        )
+
+    panel.clearHistory:SetPoint(
+        "BOTTOMLEFT",
+        panel,
+        "BOTTOMLEFT",
+        5,
+        3
+    )
+
+    panel.clearHistory:SetScript(
+        "OnClick",
+        function()
+            UI:
+                ShowClearHistoryConfirmation()
+        end
+    )
 end
 
 function UI:RefreshHistory()
@@ -1268,48 +1856,431 @@ function UI:RefreshHistory()
 end
 
 function UI:CreateSettingsPanel(panel)
-    panel.checkboxes = {
-        createCheckbox(panel, "Announce rolls in raid/party chat", "announceRolls", -10),
-        createCheckbox(panel, "Confirm before awarding loot", "confirmAwards", -45),
-        createCheckbox(panel, "Duplicate reserves grant extra rolls", "duplicateReservesGiveExtraRolls", -80),
-        createCheckbox(panel, "Automatically loot coin slots", "autoLootCoins", -115),
-        createCheckbox(panel, "Automatically loot poor-quality items", "autoLootPoor", -150),
-        createCheckbox(panel, "Automatically loot common-quality items", "autoLootCommon", -185),
-        createCheckbox(panel, "Never auto-loot reserved items", "protectReservedItems", -220),
-        createCheckbox(panel, "Open this frame when loot opens", "autoShowLoot", -255),
-    }
+    panel.checkboxes = {}
+    panel.checkboxByKey = {}
 
-    local durationLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    durationLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -305)
-    durationLabel:SetText("Roll duration (seconds):")
+    local function addCheckbox(
+        label,
+        settingKey,
+        x,
+        y,
+        tooltip,
+        onChanged
+    )
+        local checkbox =
+            createCheckbox(
+                panel,
+                label,
+                settingKey,
+                x,
+                y,
+                tooltip,
+                onChanged
+            )
 
-    local duration = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    duration:SetWidth(55)
+        table.insert(
+            panel.checkboxes,
+            checkbox
+        )
+
+        panel.checkboxByKey[settingKey] =
+            checkbox
+
+        return checkbox
+    end
+
+    --------------------------------------------------
+    -- Left column: Tracking
+    --------------------------------------------------
+
+    createSectionTitle(
+        panel,
+        "Loot tracking",
+        18,
+        -5
+    )
+
+    addCheckbox(
+        "Track Rare Bind-on-Pickup items",
+        "trackRareBindOnPickup",
+        18,
+        -28,
+        "Includes rare-quality items when they are Bind on Pickup."
+    )
+
+    addCheckbox(
+        "Detect eligible Group Loot items",
+        "trackEligibleBagLoot",
+        18,
+        -56,
+        "Adds newly received bag items only when they display the temporary raid-trade timer."
+    )
+
+    addCheckbox(
+        "Open loot window for tracked items",
+        "autoShowLoot",
+        18,
+        -84,
+        "Automatically opens the active loot window when an eligible item is registered."
+    )
+
+    --------------------------------------------------
+    -- Left column: Master Loot
+    --------------------------------------------------
+
+    createSectionTitle(
+        panel,
+        "Master Loot",
+        18,
+        -120
+    )
+
+    addCheckbox(
+        "Automatically collect tracked loot",
+        "autoCollectTrackedLoot",
+        18,
+        -143,
+        "Assigns eligible tracked Master Loot items to the configured loot holder."
+    )
+
+    addCheckbox(
+        "Auto-loot all Master Loot to me",
+        "autoMasterLootToSelf",
+        18,
+        -171,
+        "During auto-loot, assigns every Master Loot item directly to the current Master Looter.",
+        function(enabled)
+            if not enabled then
+                AL.db.settings
+                    .autoConfirmMasterLootToSelf =
+                    false
+            end
+        end
+    )
+
+    addCheckbox(
+        "Auto-confirm addon BoP warnings",
+        "autoConfirmMasterLootToSelf",
+        18,
+        -199,
+        "Only confirms Bind-on-Pickup warnings for Master Loot assignments initiated by AscensionLoot."
+    )
+
+    --------------------------------------------------
+    -- Left column: Ordinary autoloot
+    --------------------------------------------------
+
+    createSectionTitle(
+        panel,
+        "Ordinary autoloot",
+        18,
+        -235
+    )
+
+    addCheckbox(
+        "Automatically loot coins",
+        "autoLootCoins",
+        18,
+        -258,
+        "Automatically collects money slots."
+    )
+
+    addCheckbox(
+        "Automatically loot poor items",
+        "autoLootPoor",
+        18,
+        -286,
+        "Automatically collects grey-quality items."
+    )
+
+    addCheckbox(
+        "Automatically loot common items",
+        "autoLootCommon",
+        18,
+        -314,
+        "Automatically collects white-quality items."
+    )
+
+    addCheckbox(
+        "Protect reserved items from autoloot",
+        "protectReservedItems",
+        18,
+        -342,
+        "Prevents ordinary autoloot rules from collecting items listed as soft reserved or hard reserved."
+    )
+
+    --------------------------------------------------
+    -- Right column: Rolls
+    --------------------------------------------------
+
+    createSectionTitle(
+        panel,
+        "Rolls and announcements",
+        330,
+        -5
+    )
+
+    addCheckbox(
+        "Announce rolls to the group",
+        "announceRolls",
+        330,
+        -28,
+        "Sends roll starts, countdowns, ties and results to raid or party chat. When disabled, they are shown locally."
+    )
+
+    addCheckbox(
+        "Announce item assignments",
+        "announceAssignments",
+        330,
+        -56,
+        "Announces the selected recipient after an item is assigned."
+    )
+
+    addCheckbox(
+        "Duplicate SRs grant extra attempts",
+        "duplicateReservesGiveExtraRolls",
+        330,
+        -84,
+        "A player who reserved the same item more than once may roll once per reserve."
+    )
+
+    addCheckbox(
+        "Confirm manual awards",
+        "confirmAwards",
+        330,
+        -112,
+        "Shows a confirmation before manually awarding an item from an open loot window."
+    )
+
+    --------------------------------------------------
+    -- Right column: Trading
+    --------------------------------------------------
+
+    createSectionTitle(
+        panel,
+        "Trade assistance",
+        330,
+        -148
+    )
+
+    addCheckbox(
+        "Automatically open trade",
+        "autoOpenTrade",
+        330,
+        -171,
+        "Attempts to open a trade with the assigned winner automatically."
+    )
+
+    addCheckbox(
+        "Automatically place item in trade",
+        "autoFillTrade",
+        330,
+        -199,
+        "Places the correct temporarily tradeable bag item into an addon-initiated trade."
+    )
+
+    addCheckbox(
+        "Announce completed trades",
+        "announceCompletedTrades",
+        330,
+        -227,
+        "Sends completed-trade messages to raid or party chat. When disabled, the message is local only."
+    )
+
+    --------------------------------------------------
+    -- Right column: Interface
+    --------------------------------------------------
+
+    createSectionTitle(
+        panel,
+        "Interface",
+        330,
+        -263
+    )
+
+    addCheckbox(
+        "Show minimap button",
+        "showMinimapButton",
+        330,
+        -286,
+        "Shows the movable minimap button. Slash commands remain available while it is hidden.",
+        function()
+            if AL.MinimapButton
+                and AL.MinimapButton
+                    .RefreshVisibility
+            then
+                AL.MinimapButton:
+                    RefreshVisibility()
+            end
+        end
+    )
+
+    --------------------------------------------------
+    -- Roll duration
+    --------------------------------------------------
+
+    local durationLabel =
+        panel:CreateFontString(
+            nil,
+            "OVERLAY",
+            "GameFontNormal"
+        )
+
+    durationLabel:SetPoint(
+        "TOPLEFT",
+        panel,
+        "TOPLEFT",
+        335,
+        -330
+    )
+
+    durationLabel:SetText(
+        "Roll duration:"
+    )
+
+    local duration =
+        CreateFrame(
+            "EditBox",
+            nil,
+            panel,
+            "InputBoxTemplate"
+        )
+
+    duration:SetWidth(50)
     duration:SetHeight(24)
-    duration:SetPoint("LEFT", durationLabel, "RIGHT", 12, 0)
+
+    duration:SetPoint(
+        "LEFT",
+        durationLabel,
+        "RIGHT",
+        12,
+        0
+    )
+
     duration:SetAutoFocus(false)
     duration:SetNumeric(true)
     duration:SetMaxLetters(2)
-    duration:SetScript("OnEnterPressed", function(self)
-        local value = tonumber(self:GetText()) or 12
-        value = math.max(3, math.min(60, value))
-        AL.db.settings.rollDuration = value
-        self:SetText(value)
-        self:ClearFocus()
-    end)
-    duration:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    panel.duration = duration
 
-    local demo = createButton(panel, "Load UI Demo", 130, 26)
-    demo:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -355)
-    demo:SetScript("OnClick", function() AL.Loot:LoadDemo() end)
+    duration:SetScript(
+        "OnEnterPressed",
+        function(self)
+            local value =
+                tonumber(
+                    self:GetText()
+                ) or 30
 
-    local resetLoot = createButton(
-        panel,
-        "Reset Loot Window",
-        145,
-        26
+            value =
+                math.max(
+                    3,
+                    math.min(
+                        60,
+                        value
+                    )
+                )
+
+            AL.db.settings.rollDuration =
+                value
+
+            self:SetText(value)
+            self:ClearFocus()
+        end
     )
+
+    duration:SetScript(
+        "OnEditFocusLost",
+        function(self)
+            local value =
+                tonumber(
+                    self:GetText()
+                ) or 30
+
+            value =
+                math.max(
+                    3,
+                    math.min(
+                        60,
+                        value
+                    )
+                )
+
+            AL.db.settings.rollDuration =
+                value
+
+            self:SetText(value)
+        end
+    )
+
+    duration:SetScript(
+        "OnEscapePressed",
+        function(self)
+            self:SetText(
+                tostring(
+                    AL.db.settings
+                        .rollDuration
+                        or 30
+                )
+            )
+
+            self:ClearFocus()
+        end
+    )
+
+    panel.duration =
+        duration
+
+    local durationSuffix =
+        panel:CreateFontString(
+            nil,
+            "OVERLAY",
+            "GameFontHighlight"
+        )
+
+    durationSuffix:SetPoint(
+        "LEFT",
+        duration,
+        "RIGHT",
+        7,
+        0
+    )
+
+    durationSuffix:SetText(
+        "seconds"
+    )
+
+    --------------------------------------------------
+    -- Utility buttons
+    --------------------------------------------------
+
+    local demo =
+        createButton(
+            panel,
+            "Load UI Demo",
+            125,
+            26
+        )
+
+    demo:SetPoint(
+        "TOPLEFT",
+        panel,
+        "TOPLEFT",
+        20,
+        -385
+    )
+
+    demo:SetScript(
+        "OnClick",
+        function()
+            AL.Loot:LoadDemo()
+        end
+    )
+
+    local resetLoot =
+        createButton(
+            panel,
+            "Reset Loot Window",
+            145,
+            26
+        )
 
     resetLoot:SetPoint(
         "LEFT",
@@ -1319,81 +2290,158 @@ function UI:CreateSettingsPanel(panel)
         0
     )
 
-    resetLoot:SetScript("OnClick", function()
-        local settings = AL.db.windows.loot
+    resetLoot:SetScript(
+        "OnClick",
+        function()
+            local settings =
+                AL.db.windows.loot
 
-        settings.point = "CENTER"
-        settings.relativePoint = "CENTER"
-        settings.x = -250
-        settings.y = 0
-        settings.width = 700
-        settings.height = 560
-        settings.scale = 1
+            settings.point = "CENTER"
+            settings.relativePoint = "CENTER"
+            settings.x = -250
+            settings.y = 0
+            settings.width = 700
+            settings.height = 560
+            settings.scale = 1
 
-        UI.lootFrame:SetScale(1)
-        UI.lootFrame:SetWidth(700)
-        UI.lootFrame:SetHeight(560)
-        UI.lootFrame:ClearAllPoints()
-        UI.lootFrame:SetPoint(
-            "CENTER",
-            UIParent,
-            "CENTER",
-            -250,
-            0
-        )
+            UI.lootFrame:SetScale(1)
+            UI.lootFrame:SetWidth(700)
+            UI.lootFrame:SetHeight(560)
 
-        UI:UpdateDynamicWidths()
-    end)
+            UI.lootFrame:
+                ClearAllPoints()
 
-    local resetSettings = createButton(
-        panel,
-        "Reset Settings Window",
-        155,
-        26
+            UI.lootFrame:SetPoint(
+                "CENTER",
+                UIParent,
+                "CENTER",
+                -250,
+                0
+            )
+
+            UI:UpdateDynamicWidths()
+        end
     )
+
+    local resetSettings =
+        createButton(
+            panel,
+            "Reset Settings Window",
+            160,
+            26
+        )
 
     resetSettings:SetPoint(
-        "TOPLEFT",
-        demo,
-        "BOTTOMLEFT",
-        0,
-        -12
+        "LEFT",
+        resetLoot,
+        "RIGHT",
+        10,
+        0
     )
 
-    resetSettings:SetScript("OnClick", function()
-        local settings = AL.db.windows.settings
+    resetSettings:SetScript(
+        "OnClick",
+        function()
+            local settings =
+                AL.db.windows.settings
 
-        settings.point = "CENTER"
-        settings.relativePoint = "CENTER"
-        settings.x = 250
-        settings.y = 0
-        settings.width = 700
-        settings.height = 560
-        settings.scale = 1
+            settings.point = "CENTER"
+            settings.relativePoint = "CENTER"
+            settings.x = 250
+            settings.y = 0
+            settings.width = 700
+            settings.height = 560
+            settings.scale = 1
 
-        UI.settingsFrame:SetScale(1)
-        UI.settingsFrame:SetWidth(700)
-        UI.settingsFrame:SetHeight(560)
-        UI.settingsFrame:ClearAllPoints()
-        UI.settingsFrame:SetPoint(
-            "CENTER",
-            UIParent,
-            "CENTER",
-            250,
-            0
-        )
+            UI.settingsFrame:SetScale(1)
+            UI.settingsFrame:SetWidth(700)
+            UI.settingsFrame:SetHeight(560)
 
-        UI:UpdateDynamicWidths()
-    end)
+            UI.settingsFrame:
+                ClearAllPoints()
+
+            UI.settingsFrame:SetPoint(
+                "CENTER",
+                UIParent,
+                "CENTER",
+                250,
+                0
+            )
+
+            UI:UpdateDynamicWidths()
+        end
+    )
 end
 
 function UI:RefreshSettings()
-    local panel = self.panels and self.panels.settings
-    if not panel then return end
-    for _, checkbox in ipairs(panel.checkboxes) do
-        checkbox:SetChecked(AL.db.settings[checkbox.settingKey] and true or false)
+    local panel =
+        self.panels
+        and self.panels.settings
+
+    if not panel then
+        return
     end
-    panel.duration:SetText(tostring(AL.db.settings.rollDuration or 12))
+
+    for _, checkbox in ipairs(
+        panel.checkboxes or {}
+    ) do
+        local enabled =
+            AL.db.settings[
+                checkbox.settingKey
+            ]
+
+        checkbox:SetChecked(
+            enabled
+            and true
+            or false
+        )
+
+        checkbox.text:SetTextColor(
+            1,
+            0.82,
+            0
+        )
+    end
+
+    panel.duration:SetText(
+        tostring(
+            AL.db.settings.rollDuration
+                or 30
+        )
+    )
+
+    --------------------------------------------------
+    -- Dependent Master Loot option
+    --------------------------------------------------
+
+    local autoConfirm =
+        panel.checkboxByKey
+        and panel.checkboxByKey[
+            "autoConfirmMasterLootToSelf"
+        ]
+
+    if autoConfirm then
+        if AL.db.settings
+            .autoMasterLootToSelf
+        then
+            autoConfirm:Enable()
+
+            autoConfirm.text:SetTextColor(
+                1,
+                0.82,
+                0
+            )
+        else
+            autoConfirm:Disable()
+            autoConfirm:SetChecked(false)
+
+            autoConfirm.text:SetTextColor(
+                0.5,
+                0.5,
+                0.5
+            )
+        end
+    end
 end
 
 function UI:ShowSettingsTab(tabName)

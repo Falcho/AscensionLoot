@@ -309,10 +309,17 @@ function Session:MarkTraded(entry, recipient)
         entry.tradedTo or entry.winner or "Unknown"
     )
 
-    if AL.AnnounceTrade then
-        AL:AnnounceTrade(tradeMessage)
+    if AL.db.settings
+        .announceCompletedTrades
+        and AL.AnnounceTrade
+    then
+        AL:AnnounceTrade(
+            tradeMessage
+        )
     else
-        AL:Print(tradeMessage)
+        AL:Print(
+            tradeMessage
+        )
     end
 
     if AL.UI then
