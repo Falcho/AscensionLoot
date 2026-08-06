@@ -2304,7 +2304,7 @@ function UI:CreateSettingsPanel(panel)
     local resetLoot =
         createButton(
             panel,
-            "Reset loot window size and position",
+            "Reset loot window",
             145,
             26
         )
@@ -2353,7 +2353,7 @@ function UI:CreateSettingsPanel(panel)
     local resetSettings =
         createButton(
             panel,
-            "Reset Settings Window size and position",
+            "Reset Settings Window",
             160,
             26
         )

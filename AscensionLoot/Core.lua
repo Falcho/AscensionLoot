@@ -705,6 +705,68 @@ function AL:AnnounceRoll(text)
     self:Announce(text)
 end
 
+function AL:AnnounceRollWarning(text)
+    if type(text) ~= "string"
+        or text == ""
+    then
+        return
+    end
+
+    --------------------------------------------------
+    -- Respect the roll-announcement setting
+    --------------------------------------------------
+
+    if self.db
+        and self.db.settings
+        and self.db.settings
+            .announceRolls == false
+    then
+        self:Print(text)
+        return
+    end
+
+    --------------------------------------------------
+    -- Raid
+    --------------------------------------------------
+
+    if self:IsInRaid() then
+        if self:CanSendRaidWarning() then
+            self:QueueChatMessage(
+                text,
+                "RAID_WARNING"
+            )
+        else
+            -- WoW only permits leaders and assistants
+            -- to send RAID_WARNING messages.
+            self:QueueChatMessage(
+                text,
+                "RAID"
+            )
+        end
+
+        return
+    end
+
+    --------------------------------------------------
+    -- Party
+    --------------------------------------------------
+
+    if self:IsInParty() then
+        self:QueueChatMessage(
+            text,
+            "PARTY"
+        )
+
+        return
+    end
+
+    --------------------------------------------------
+    -- Solo testing
+    --------------------------------------------------
+
+    self:Print(text)
+end
+
 function AL:AnnounceTrade(text)
     if type(text) ~= "string" or text == "" then
         return

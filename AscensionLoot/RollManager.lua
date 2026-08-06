@@ -479,11 +479,25 @@ function Roll:BeginTie(tiedResults)
 
     table.sort(names)
 
-    local duration =
-        tonumber(AL.db.settings.rollDuration) or 12
+    local duration = tonumber(AL.db.settings.rollDuration) or 12
+    local startedAt = GetTime()
 
     active.state = "tie"
+
     active.countdownAnnounced = {}
+    active.halfwayAnnounced = false
+
+    active.startedAt = startedAt
+
+    active.duration = duration
+
+    active.halfwayAt =
+        duration > 10
+        and (
+            startedAt
+            + duration / 2
+        )
+        or nil
 
     active.tie = {
         category = category,
@@ -497,12 +511,21 @@ function Roll:BeginTie(tiedResults)
         "Tie between " .. table.concat(names, ", ")
 
     AL:AnnounceRoll(string.format(
-        "Tie between %s for %s. Reroll /roll %d.",
-        table.concat(names, ", "),
+        "Tie between %s for %s. "
+            .. "Reroll /roll %d. "
+            .. "You have %d seconds.",
+
+        table.concat(
+            names,
+            ", "
+        ),
+
         AL:GetAnnouncementItemText(
             active.item
         ),
-        expectedMaximum
+
+        expectedMaximum,
+        duration
     ))
 
     if AL.UI then
@@ -523,6 +546,9 @@ function Roll:StartForItem(item)
             AL.db.settings.rollDuration
         ) or 12
 
+    local startedAt =
+    GetTime()
+
     local copyCount =
         self:GetAvailableCopyCount(item)
 
@@ -536,6 +562,21 @@ function Roll:StartForItem(item)
         state = "rolling",
         copyCount = copyCount,
         countdownAnnounced = {},
+        halfwayAnnounced = false,
+
+        startedAt = startedAt,
+        endsAt = startedAt + duration,
+        duration = duration,
+
+        -- Rolls of 10 seconds or less do not receive
+        -- a halfway warning.
+        halfwayAt =
+            duration > 10
+            and (
+                startedAt
+                + duration / 2
+            )
+            or nil,
 
         reserveMap = reserveMap,
 
@@ -543,10 +584,6 @@ function Roll:StartForItem(item)
             reserveNameResolutions,
 
         rollsByPlayer = {},
-
-        startedAt = GetTime(),
-        endsAt = GetTime() + duration,
-        duration = duration,
 
         proposedWinner = nil,
         proposedWinners = {},
@@ -561,14 +598,20 @@ function Roll:StartForItem(item)
 
     AL:AnnounceRoll(string.format(
         "Roll for %s — %d %s available. "
+            .. "You have %d seconds to roll. "
             .. "SR/MS: /roll 100. "
             .. "OS: /roll 99. "
             .. "Priority: SR > MS > OS.",
+
         AL:GetAnnouncementItemText(item),
+
         copyCount,
+
         copyCount == 1
             and "copy"
-            or "copies"
+            or "copies",
+
+        duration
     ))
 
     if AL.UI then
@@ -830,7 +873,7 @@ function Roll:Finish()
         winnerWord = "winners"
     end
 
-    AL:AnnounceRollRollRoll(string.format(
+    AL:AnnounceRoll(string.format(
         "Rolling has finished, %s %s: %s.",
         AL:GetAnnouncementItemText(
             active.item
@@ -909,7 +952,8 @@ function Roll:SelectWinner(name)
 end
 
 function Roll:OnUpdate()
-    local active = self.active
+    local active =
+        self.active
 
     if not active then
         return
@@ -923,32 +967,102 @@ function Roll:OnUpdate()
         return
     end
 
+    local now =
+        GetTime()
+
     local remaining =
         math.max(
             0,
             math.ceil(
-                active.endsAt - GetTime()
+                active.endsAt - now
             )
         )
 
     active.countdownAnnounced =
-        active.countdownAnnounced or {}
+        active.countdownAnnounced
+        or {}
+
+    --------------------------------------------------
+    -- Halfway warning
+    --------------------------------------------------
+
+    if active.halfwayAt
+        and not active.halfwayAnnounced
+        and now >= active.halfwayAt
+    then
+        active.halfwayAnnounced =
+            true
+
+        -- Avoid sending the halfway warning and
+        -- five-second warning together if the client
+        -- briefly freezes or lags.
+        if remaining > 5 then
+            local itemText
+
+            if AL.GetAnnouncementItemText then
+                itemText =
+                    AL:GetAnnouncementItemText(
+                        active.item
+                    )
+            else
+                itemText =
+                    active.item.link
+                    or active.item.name
+                    or "item"
+            end
+
+            AL:AnnounceRollWarning(
+                string.format(
+                    "Halfway! %d seconds remain "
+                        .. "to roll for %s.",
+
+                    remaining,
+                    itemText
+                )
+            )
+        end
+    end
+
+    --------------------------------------------------
+    -- Final five-second countdown
+    --------------------------------------------------
 
     if remaining >= 1
-        and remaining <= 3
-        and not active.countdownAnnounced[remaining]
+        and remaining <= 5
+        and not active
+            .countdownAnnounced[
+                remaining
+            ]
     then
-        active.countdownAnnounced[remaining] = true
+        active.countdownAnnounced[
+            remaining
+        ] = true
 
-        AL:AnnounceRoll(
-            tostring(remaining)
+        AL:AnnounceRollWarning(
+            string.format(
+                "%d %s remaining!",
+
+                remaining,
+
+                remaining == 1
+                    and "second"
+                    or "seconds"
+            )
         )
     end
 
-    if GetTime() >= active.endsAt then
+    --------------------------------------------------
+    -- Finish expired roll
+    --------------------------------------------------
+
+    if now >= active.endsAt then
         self:Finish()
         return
     end
+
+    --------------------------------------------------
+    -- Refresh local timer display
+    --------------------------------------------------
 
     if AL.UI then
         AL.UI:RefreshRollTimer()
