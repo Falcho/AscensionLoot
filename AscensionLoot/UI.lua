@@ -1324,14 +1324,34 @@ function UI:RefreshReserves()
                         itemID
                     )
 
-            local label =
-                itemInfo.link
+            local label
+
+            if itemInfo.link
                 or itemInfo.name
-                or (
-                    "Loading item "
+            then
+                label =
+                    itemInfo.link
+                    or itemInfo.name
+
+            elseif itemInfo.failed then
+                label =
+                    "Item #"
                     .. tostring(itemID)
-                    .. "..."
-                )
+                    .. " (details unavailable)"
+
+            else
+                label =
+                    string.format(
+                        "Loading item %s... (%d/%d)",
+                        tostring(itemID),
+                        tonumber(
+                            itemInfo.attempt
+                        ) or 1,
+                        tonumber(
+                            itemInfo.maxAttempts
+                        ) or 3
+                    )
+            end
 
             if item.count > 1 then
                 label =

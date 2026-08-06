@@ -3,39 +3,109 @@ local AL = AscensionLoot
 AL.SoftReserve = AL.SoftReserve or {}
 local SR = AL.SoftReserve
 
-local ASCENSION_ITEM_OFFSET =
-    300000
+local ITEM_INFO_MAX_ATTEMPTS = 3
+local ITEM_INFO_RETRY_INTERVAL = 15
+local ITEM_INFO_POLL_INTERVAL = 0.5
 
-local function addUniqueID(
-    result,
-    seen,
-    itemID
-)
-    itemID =
-        tonumber(itemID)
+--------------------------------------------------
+-- Hidden tooltip used to force item-info requests
+--------------------------------------------------
 
-    if not itemID
-        or itemID <= 0
-        or seen[itemID]
-    then
-        return
-    end
+local ITEM_FETCH_TOOLTIP_NAME =
+    "AscensionLootItemFetchTooltip"
 
-    seen[itemID] = true
-
-    table.insert(
-        result,
-        itemID
+local itemFetchTooltip =
+    CreateFrame(
+        "GameTooltip",
+        ITEM_FETCH_TOOLTIP_NAME,
+        UIParent,
+        "GameTooltipTemplate"
     )
-end
+
+itemFetchTooltip:SetOwner(
+    UIParent,
+    "ANCHOR_NONE"
+)
+
+itemFetchTooltip:Hide()
 
 SR.byItem = {}
 SR.byPlayer = {}
 SR.hardReserves = {}
 SR.metadata = {}
+
 SR.pendingItemInfo =
     SR.pendingItemInfo or {}
+
+SR.failedItemInfo =
+    SR.failedItemInfo or {}
+
 SR.nextItemInfoCheck = 0
+
+local function requestItemInfo(
+    itemID
+)
+    itemID =
+        tonumber(itemID)
+
+    if not itemID then
+        return false
+    end
+
+    --------------------------------------------------
+    -- It may already have loaded since the last poll
+    --------------------------------------------------
+
+    local itemName,
+        itemLink =
+            GetItemInfo(
+                itemID
+            )
+
+    if itemName or itemLink then
+        return true
+    end
+
+    --------------------------------------------------
+    -- Force Ascension to request the exact item ID
+    --------------------------------------------------
+
+    local hyperlink =
+        string.format(
+            "item:%d:0:0:0:0:0:0:0",
+            itemID
+        )
+
+    itemFetchTooltip:Hide()
+    itemFetchTooltip:ClearLines()
+
+    itemFetchTooltip:SetOwner(
+        UIParent,
+        "ANCHOR_NONE"
+    )
+
+    -- Some custom/invalid item IDs can make
+    -- SetHyperlink throw an error, so protect it.
+    local success =
+        pcall(
+            itemFetchTooltip.SetHyperlink,
+            itemFetchTooltip,
+            hyperlink
+        )
+
+    itemFetchTooltip:Hide()
+
+    --------------------------------------------------
+    -- Ask again immediately in case SetHyperlink
+    -- populated the cache synchronously.
+    --------------------------------------------------
+
+    GetItemInfo(
+        itemID
+    )
+
+    return success
+end
 
 local function addPlayerReserve(playerName, itemID, quality)
     local displayName =
@@ -83,136 +153,167 @@ local function addPlayerReserve(playerName, itemID, quality)
     playerEntry.items[itemID].count = playerEntry.items[itemID].count + 1
 end
 
-function SR:GetItemIDCandidates(itemID)
+function SR:QueueItemInfoRequest(
+    itemID
+)
     itemID =
         tonumber(itemID)
 
-    local result = {}
-    local seen = {}
-
-    addUniqueID(
-        result,
-        seen,
-        itemID
-    )
-
     if not itemID then
-        return result
+        return false
     end
 
     --------------------------------------------------
-    -- BisBeard/Ascension variant ID to base ID
+    -- Already loaded
     --------------------------------------------------
 
-    if itemID >= ASCENSION_ITEM_OFFSET
-        and itemID
-            < ASCENSION_ITEM_OFFSET
-                + 100000
-    then
-        addUniqueID(
-            result,
-            seen,
+    local itemName,
+        itemLink =
+            GetItemInfo(
+                itemID
+            )
+
+    if itemName or itemLink then
+        self.pendingItemInfo[
             itemID
-                - ASCENSION_ITEM_OFFSET
-        )
+        ] = nil
 
-    --------------------------------------------------
-    -- Base ID to possible Ascension variant ID
-    --------------------------------------------------
-
-    elseif itemID < 100000 then
-        addUniqueID(
-            result,
-            seen,
+        self.failedItemInfo[
             itemID
-                + ASCENSION_ITEM_OFFSET
-        )
+        ] = nil
+
+        return true
     end
 
-    return result
-end
+    --------------------------------------------------
+    -- Already being fetched
+    --------------------------------------------------
 
-function SR:QueueItemInfoRequest(itemID)
+    if self.pendingItemInfo[
+        itemID
+    ] then
+        return false
+    end
+
+    --------------------------------------------------
+    -- Already exhausted all attempts
+    --------------------------------------------------
+
+    if self.failedItemInfo[
+        itemID
+    ] then
+        return false
+    end
+
+    --------------------------------------------------
+    -- Attempt 1/3 immediately
+    --------------------------------------------------
+
     local now =
         GetTime()
 
-    for _, candidateID in ipairs(
-        self:GetItemIDCandidates(
-            itemID
-        )
-    ) do
-        -- Calling GetItemInfo initiates the cache
-        -- request when the item is not yet cached.
-        GetItemInfo(candidateID)
+    self.pendingItemInfo[
+        itemID
+    ] = {
+        attempts = 1,
 
-        self.pendingItemInfo[
-            candidateID
-        ] =
-            now + 12
-    end
+        nextRetryAt =
+            now
+            + ITEM_INFO_RETRY_INTERVAL,
+    }
+
+    requestItemInfo(
+        itemID
+    )
+
+    return false
 end
 
-function SR:GetDisplayItemInfo(itemID)
-    local candidates =
-        self:GetItemIDCandidates(
-            itemID
-        )
+function SR:GetDisplayItemInfo(
+    itemID
+)
+    itemID =
+        tonumber(itemID)
 
-    --------------------------------------------------
-    -- Prefer the exact imported item ID
-    --------------------------------------------------
-
-    for _, candidateID in ipairs(
-        candidates
-    ) do
-        local itemName,
-            itemLink,
-            quality,
-            itemLevel,
-            requiredLevel,
-            itemType,
-            itemSubType,
-            stackCount,
-            equipLocation,
-            texture =
-                GetItemInfo(
-                    candidateID
-                )
-
-        if itemName or itemLink then
-            return {
-                requestedID =
-                    tonumber(itemID),
-
-                resolvedID =
-                    candidateID,
-
-                name =
-                    itemName,
-
-                link =
-                    itemLink,
-
-                quality =
-                    quality,
-
-                texture =
-                    texture,
-            }
-        end
+    if not itemID then
+        return {
+            requestedID = nil,
+            resolvedID = nil,
+            name = nil,
+            link = nil,
+            quality = nil,
+            texture = nil,
+            failed = true,
+        }
     end
 
     --------------------------------------------------
-    -- Neither ID is cached yet
+    -- Use the exact imported Ascension item ID
+    --------------------------------------------------
+
+    local itemName,
+        itemLink,
+        quality,
+        itemLevel,
+        requiredLevel,
+        itemType,
+        itemSubType,
+        stackCount,
+        equipLocation,
+        texture =
+            GetItemInfo(
+                itemID
+            )
+
+    if itemName or itemLink then
+        self.pendingItemInfo[
+            itemID
+        ] = nil
+
+        self.failedItemInfo[
+            itemID
+        ] = nil
+
+        return {
+            requestedID =
+                itemID,
+
+            resolvedID =
+                itemID,
+
+            name =
+                itemName,
+
+            link =
+                itemLink,
+
+            quality =
+                quality,
+
+            texture =
+                texture,
+
+            failed =
+                false,
+        }
+    end
+
+    --------------------------------------------------
+    -- Queue a forced tooltip fetch if necessary
     --------------------------------------------------
 
     self:QueueItemInfoRequest(
         itemID
     )
 
+    local pending =
+        self.pendingItemInfo[
+            itemID
+        ]
+
     return {
         requestedID =
-            tonumber(itemID),
+            itemID,
 
         resolvedID =
             nil,
@@ -226,8 +327,25 @@ function SR:GetDisplayItemInfo(itemID)
         quality =
             nil,
 
+        -- GetItemIcon often works before GetItemInfo
+        -- on Ascension custom items.
         texture =
-            nil,
+            GetItemIcon(
+                itemID
+            ),
+
+        attempt =
+            pending
+            and pending.attempts
+            or ITEM_INFO_MAX_ATTEMPTS,
+
+        maxAttempts =
+            ITEM_INFO_MAX_ATTEMPTS,
+
+        failed =
+            self.failedItemInfo[
+                itemID
+            ] == true,
     }
 end
 
@@ -235,7 +353,15 @@ function SR:Rebuild(rawData)
     self.byItem = {}
     self.byPlayer = {}
     self.hardReserves = {}
-    self.metadata = rawData and rawData.metadata or {}
+
+    self.pendingItemInfo = {}
+    self.failedItemInfo = {}
+    self.nextItemInfoCheck = 0
+
+    self.metadata =
+        rawData
+        and rawData.metadata
+        or {}
 
     if type(rawData) ~= "table" then return end
 
@@ -343,20 +469,16 @@ function SR:Clear()
 end
 
 function SR:GetItem(itemID)
-    for _, candidateID in ipairs(
-        self:GetItemIDCandidates(
-            itemID
-        )
-    ) do
-        local item =
-            self.byItem[candidateID]
+    itemID =
+        tonumber(itemID)
 
-        if item then
-            return item
-        end
+    if not itemID then
+        return nil
     end
 
-    return nil
+    return self.byItem[
+        itemID
+    ]
 end
 
 function SR:GetReservers(itemID)
@@ -369,21 +491,19 @@ function SR:IsReserved(itemID)
         ~= nil
 end
 
-function SR:IsHardReserved(itemID)
-    for _, candidateID in ipairs(
-        self:GetItemIDCandidates(
-            itemID
-        )
-    ) do
-        if self.hardReserves[
-            candidateID
-        ]
-        then
-            return true
-        end
+function SR:IsHardReserved(
+    itemID
+)
+    itemID =
+        tonumber(itemID)
+
+    if not itemID then
+        return false
     end
 
-    return false
+    return self.hardReserves[
+        itemID
+    ] ~= nil
 end
 
 function SR:GetSummary()
@@ -450,16 +570,21 @@ function SR:OnUpdate()
     end
 
     self.nextItemInfoCheck =
-        now + 0.5
+        now
+        + ITEM_INFO_POLL_INTERVAL
 
-    local informationLoaded =
+    local refreshUI =
         false
 
     for itemID,
-        expiresAt in pairs(
+        state in pairs(
             self.pendingItemInfo
         )
     do
+        --------------------------------------------------
+        -- Has the server returned the item yet?
+        --------------------------------------------------
+
         local itemName,
             itemLink =
                 GetItemInfo(
@@ -471,19 +596,73 @@ function SR:OnUpdate()
                 itemID
             ] = nil
 
-            informationLoaded =
-                true
-
-        elseif now >= expiresAt then
-            -- Stop retrying IDs that the server does
-            -- not recognize.
-            self.pendingItemInfo[
+            self.failedItemInfo[
                 itemID
             ] = nil
+
+            refreshUI =
+                true
+
+        --------------------------------------------------
+        -- Time for another forced request
+        --------------------------------------------------
+
+        elseif now
+            >= (
+                state.nextRetryAt
+                or 0
+            )
+        then
+            local attempts =
+                state.attempts
+                or 1
+
+            if attempts
+                < ITEM_INFO_MAX_ATTEMPTS
+            then
+                --------------------------------------------------
+                -- Attempt 2/3 or 3/3
+                --------------------------------------------------
+
+                attempts =
+                    attempts + 1
+
+                state.attempts =
+                    attempts
+
+                state.nextRetryAt =
+                    now
+                    + ITEM_INFO_RETRY_INTERVAL
+
+                requestItemInfo(
+                    itemID
+                )
+
+                refreshUI =
+                    true
+
+            else
+                --------------------------------------------------
+                -- All three requests were made.
+                -- Give the third request one full retry interval
+                -- to return before marking it unavailable.
+                --------------------------------------------------
+
+                self.pendingItemInfo[
+                    itemID
+                ] = nil
+
+                self.failedItemInfo[
+                    itemID
+                ] = true
+
+                refreshUI =
+                    true
+            end
         end
     end
 
-    if informationLoaded
+    if refreshUI
         and AL.UI
         and AL.UI.RefreshReserves
     then
