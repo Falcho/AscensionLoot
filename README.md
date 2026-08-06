@@ -22,8 +22,6 @@ It is built for raids that collect loot on one designated holder and distribute 
 - Loot history with clear-history confirmation
 - Built-in UI demo with safe cleanup
 
-AscensionLoot does **not** include GDKP, bidding, pots, cuts, balances, or gold tracking.
-
 ## Roll rules
 
 ```text
