@@ -2,17 +2,28 @@
 
 Ascension Loot is a focused World of Warcraft 3.3.5a raid-loot addon for Ascension: Conquest of Azeroth.
 
-The addon is designed for raid groups that collect boss loot first and distribute it later. It combines BisBeard soft-reserve imports, a persistent raid loot session, bag-based rolling, simple item assignment, configurable loot collection, and a compact user interface.
+It is designed for raid groups that collect eligible loot on one designated holder, continue through several bosses, and distribute the accumulated items later. It combines BisBeard soft-reserve imports, persistent loot-session tracking, raid-time player-name matching, structured rolling, Group Loot and Master Loot workflows, and assisted trading.
 
-Ascension Loot does **not** include GDKP auctions, gold tracking, buyer balances, pots, cuts, debt tracking, or other GDKP functionality.
+Ascension Loot does **not** include GDKP auctions, gold bidding, pots, cuts, balances, debts, or other GDKP functionality.
 
 ## Development status
 
-Current development version: **0.2.0**
+Current development version: **0.3.0**
 
-Version 0.2.0 changes the primary workflow from awarding loot directly from an open corpse to collecting tracked loot on a designated loot holder and distributing it later from that player's bags.
+Version 0.3.0 expands the delayed-distribution workflow introduced in 0.2.0 and adds:
 
-The 0.2.0 refactor is still being implemented and tested. Features marked as development features may require additional Ascension-specific compatibility fixes.
+- A movable minimap button
+- Automatic Master Loot collection to the loot holder
+- Group Loot bag detection
+- Verification that bag items are still inside the temporary raid-trade window
+- Raid-time correction and safe prefix matching of imported character names
+- Clickable item links in roll announcements
+- Assisted trade opening and trade-window filling
+- Verified completed-trade handling
+- Correct handling when the loot holder wins their own item
+- A more compact active-loot interface
+
+Ascension-specific live testing is still recommended because the client contains custom server and interface behaviour.
 
 ## Main features
 
@@ -31,157 +42,215 @@ The importer supports:
 - Hard-reserved items when included in the export
 - Persistent reserve data through SavedVariables
 
-### Delayed loot distribution
+### Raid-time name resolution
 
-Tracked boss loot can be awarded automatically to:
+BisBeard exports player names exactly as entered by the user. Ascension Loot therefore resolves reserve names against the current raid roster when a roll starts.
 
-- The master looter
-- A named raid member configured as the loot holder
+Supported corrections include:
 
-Collected items are stored in a persistent raid-session queue. The raid can kill several bosses before stopping to distribute the accumulated loot.
+- First-letter capitalization, such as `sylvannas` to `Sylvannas`
+- Case-insensitive exact matching
+- Safe unique-prefix matching, such as `Short` to `Shortenedname`
 
-Each queued item can store:
+Prefix matching is only accepted when exactly one current group member matches. Ambiguous names are reported locally instead of being guessed.
+
+### Persistent delayed distribution
+
+Eligible items are stored in a persistent loot-session queue and remain available after:
+
+- Closing the corpse loot window
+- Closing the Ascension Loot window
+- Opening another corpse
+- `/reload`
+- Logging out and back in
+
+Each tracked item may store:
 
 - Item ID and item link
 - Item quality and quantity
 - Loot holder
 - Collection time
-- Estimated two-hour trade deadline
-- Soft-reserve status
+- Last known bag location
+- Temporary tradeability information
+- Soft-reserve information
 - Assigned winner
 - Assignment reason
 - Winning roll
+- Trade status
+- Completed-trade or self-kept status
 
-The estimated trade deadline is informational. The game server remains authoritative regarding whether an item is still tradable.
+### Master Loot collection
+
+When configured as the Master Looter, the addon can assign auto-looted items directly to the loot holder.
+
+Tracked items are added to the persistent loot queue:
+
+- Epic items and higher
+- Rare Bind-on-Pickup items
+
+Lower-quality and otherwise untracked items can still be assigned to the holder without being added to the distribution queue.
+
+Bind confirmations are only accepted for assignments initiated by Ascension Loot. The addon does not globally accept unrelated loot warnings.
+
+### Group Loot collection
+
+A raid may use Group Loot while every player except the designated loot holder passes.
+
+When an eligible item enters the holder's bags, Ascension Loot can add it to the persistent loot session. The bag watcher compares bag snapshots and verifies the specific item through its tooltip.
+
+Only items showing the temporary raid-trade timer are accepted. This prevents old soulbound equipment from appearing merely because it was unequipped between fights.
+
+### Tradeability verification
+
+Bag items are checked for the temporary raid-trade tooltip before they are:
+
+- Registered automatically
+- Registered through Alt-click
+- Selected for automatic trade filling
+
+The game server remains authoritative. An item that no longer displays the temporary trade timer is treated as non-tradeable by the addon.
 
 ### Bag-based rolling
 
-The loot holder can interact with supported bag items using modifier clicks:
+For supported bag items:
 
-- **Alt + Left Click:** Start the appropriate roll for the item
+- **Alt + Left Click:** Register the tradeable item when necessary and start a roll
 - **Shift + Alt + Left Click:** Directly assign the item when exactly one player soft reserved it
 
-The default roll is selected automatically:
-
-- One soft reserver: propose that player as the recipient
-- Multiple soft reservers: start a soft-reserve-only `/roll 100`
-- No soft reservers: start an open main-spec `/roll 100`
-- Off-spec button: start `/roll 99`
-
-Bag modifier clicks initially target the standard Blizzard bag interface. Custom all-in-one bag addons may require separate hooks.
+Existing non-tradeable gear is rejected instead of being added to the loot session.
 
 ### Roll management
 
-Ascension Loot supports:
+Ascension Loot uses one combined roll session per item.
 
-- Soft-reserve-only rolls
-- Open main-spec rolls
-- Off-spec rolls
-- Configurable roll duration
-- Early finish and cancellation
-- Duplicate-roll rejection
-- Multiple allowed rolls for duplicate soft reserves
-- Tie detection
-- Tie rerolls
-- Automatic winner selection
-- One active roll at a time
+Roll commands:
 
-### Item assignment
+- `/roll 100` for soft reserve or main spec
+- `/roll 99` for off spec
 
-For items still in an open loot window, the addon validates the loot slot and master-loot candidate before using `GiveMasterLoot`.
-
-For items already held in a player's bags, the addon records the selected recipient in the raid-session queue. The holder must then complete the trade manually.
-
-An assigned bag item is shown as:
+Priority:
 
 ```text
-Assigned to Playername — trade pending
+Soft Reserve > Main Spec > Off Spec
 ```
 
-### Loot quality filter
+Additional behaviour:
 
-The addon reacts only to items matching the configured tracking rules.
+- The addon classifies `/roll 100` as SR when the player reserved the item
+- Otherwise `/roll 100` is treated as MS
+- Duplicate soft reserves permit multiple roll attempts
+- A player can win no more than one copy in the same roll session
+- Multiple available copies select multiple unique winners
+- Boundary ties trigger a reroll only among the tied players
+- Duplicate invalid rolls are rejected
+- One roll session can be active at a time
+- Start, countdown, tie, no-roll, and winner announcements are supported
+- Real item links remain clickable in chat
 
-Default tracking behaviour:
+### Item assignment and trade assistance
 
-- Epic items and higher
-- Rare items when they are Bind on Pickup
+After a winner is selected, the item enters one of two completed workflows.
 
-The minimum tracked quality and rare Bind-on-Pickup exception can be changed in the settings window.
+#### Winner is another player
 
-This tracked-loot filter is separate from the low-quality autoloot settings.
+The item becomes `awaiting_trade`.
 
-### Automatic collection and low-quality autoloot
+Ascension Loot can:
 
-The addon can automatically collect tracked raid loot on the configured holder.
+- Queue the assigned item
+- Find the winner in the group
+- Open the trade window
+- Find the correct temporarily tradeable bag copy
+- Place the item into the trade window
+- Wait for the players to accept the trade
+- Mark the item as traded only after the client reports a completed trade
 
-Low-quality autoloot can also handle items below the configured loot threshold while protecting reserved items.
+Cancelled or failed trades remain visible for another attempt.
 
-Recommended defaults:
+#### Winner is the loot holder
 
-- Collect tracked boss loot on the configured holder
-- Auto-loot poor items
-- Auto-loot common items
-- Protect soft-reserved items
-- Protect hard-reserved items
-- Do not automatically distribute rare or epic equipment to final recipients
+No trade is required.
 
-### Separate user-interface windows
+The item becomes `kept` and is removed from the active loot window while remaining in the persistent session/history.
 
-Version 0.2.0 uses two independent frames.
+### Active loot-window states
+
+The active loot window shows items that still require action.
+
+| Status | Visible |
+|---|---:|
+| `unassigned` | Yes |
+| `awaiting_trade` | Yes |
+| `in_trade` | Yes |
+| Cancelled or failed trade | Yes |
+| `traded` | No |
+| `kept` | No |
+| `skipped` | No |
+
+Skip is available only for unassigned items.
+
+### Minimap button
+
+Version 0.3.0 adds a movable minimap button.
+
+- **Left click:** Open the loot window
+- **Right click:** Open Settings directly on the Import page
+- **Left-button drag:** Move the button around the current minimap
+
+The button is anchored to the actual `Minimap` frame rather than a fixed screen corner. It therefore follows minimap addons that move or resize the minimap. Its saved angular position is recalculated against the minimap's current dimensions.
+
+### User interface
+
+Ascension Loot uses two independent windows.
 
 #### Loot window
 
 Contains:
 
-- Persistent raid-session loot queue
-- Item icons and links
+- Persistent active loot queue
+- Item icons and clickable links
 - Soft-reserve information
-- Loot-holder information
-- Estimated trade time remaining
-- Active roll information
-- Roll, off-spec, finish, cancel, award, and skip controls
+- Roll state
+- Assignment and trade state
+- Roll, Award, Trade, and Skip controls
 
 #### Settings window
 
-Contains separate tabs for:
+Contains tabs for:
 
 - Reserves
 - Import
 - History
 - Settings
 
-Both windows are intended to be:
+Both windows are:
 
 - Movable
 - Independently resizable
 - Independently scalable
-- Able to remember their positions and dimensions
-- Open at the same time
+- Stored separately in SavedVariables
+- Able to remain open at the same time
 
 ## Installation
 
 Copy the `AscensionLoot` folder into the Ascension client:
 
 ```text
-Interface\AddOns\AscensionLoot\AscensionLoot.toc
+Interface\AddOns\AscensionLoot\
 ```
 
-The final path must look like:
+The final structure must resemble:
 
 ```text
 Interface\AddOns\AscensionLoot\AscensionLoot.toc
 Interface\AddOns\AscensionLoot\Core.lua
+Interface\AddOns\AscensionLoot\MinimapButton.lua
 Interface\AddOns\AscensionLoot\UI.lua
 ```
 
-Do not install it with an extra nested folder such as:
+Do not install it with an additional nested folder.
 
-```text
-Interface\AddOns\AscensionLoot\AscensionLoot\AscensionLoot.toc
-```
-
-Restart the client, enable the addon on the character-selection screen, and enable Lua error reporting:
+Restart the client, enable the addon on the character-selection screen, and enable Lua errors while testing:
 
 ```text
 /console scriptErrors 1
@@ -191,58 +260,61 @@ Restart the client, enable the addon on the character-selection screen, and enab
 ## BisBeard import
 
 1. Open the raid on BisBeard.
-2. Lock the reserve list when it is ready.
+2. Lock the reserve list.
 3. Select **RollFor export**.
 4. Copy the generated Base64 string.
-5. In game, run:
+5. Right-click the Ascension Loot minimap button, or run:
 
 ```text
 /al import
 ```
 
-6. Paste the export string into the import field.
+6. Paste the export into the Import field.
 7. Press **Import**.
 8. Review the import summary.
 
-A successful import should report the raid name, number of players, total reserve selections, unique items, and hard reserves.
+## Suggested raid workflows
 
-## Intended raid workflow
+### Master Loot
 
-1. Configure the master looter or named loot holder.
-2. Configure the tracked item quality.
-3. Import the raid's BisBeard reserve data.
-4. Kill a boss and open the corpse.
-5. The addon identifies tracked items.
-6. Tracked items are awarded to the configured loot holder.
-7. The items are added to the persistent raid-session queue.
-8. Continue killing additional bosses.
-9. When ready to distribute loot, the holder opens their bags.
-10. Alt-click an item to start its appropriate roll.
-11. Shift+Alt-click a solo-soft-reserved item to assign it directly.
-12. The addon records the selected recipient.
-13. The loot holder trades the item manually.
+1. Enable Master Loot.
+2. Make the designated holder the Master Looter.
+3. Import BisBeard reserves.
+4. Auto-loot the corpse.
+5. Ascension Loot assigns items to the holder.
+6. Eligible tradeable items enter the persistent queue.
+7. Continue through additional bosses.
+8. Roll and trade the accumulated items later.
+
+### Group Loot
+
+1. Enable Group Loot.
+2. Designate one player as loot holder.
+3. All other players pass on distributable loot.
+4. The holder wins the item through the normal game roll.
+5. Ascension Loot verifies the temporary trade timer.
+6. The item enters the persistent queue.
+7. Roll and trade it later through Ascension Loot.
 
 ## Commands
-
-The available commands depend on the current development stage.
 
 ```text
 /al
 ```
 
-Toggle the loot-session window.
+Toggle the loot window.
 
 ```text
 /al loot
 ```
 
-Open the loot-session window.
+Open the loot window.
 
 ```text
 /al settings
 ```
 
-Open the separate settings window.
+Open the Settings tab.
 
 ```text
 /al reserves
@@ -254,7 +326,7 @@ Open the reserve viewer.
 /al import
 ```
 
-Open the BisBeard import panel.
+Open the BisBeard Import page.
 
 ```text
 /al history
@@ -275,22 +347,28 @@ Finish the active roll early.
 Cancel the active roll.
 
 ```text
+/al trade
+```
+
+Attempt to trade the next assigned item.
+
+```text
 /al clear
 ```
 
-Clear imported soft-reserve data.
+Clear imported soft reserves.
 
 ```text
 /al clearloot
 ```
 
-Clear the persistent raid-session loot queue.
+Clear the persistent loot-session queue.
 
 ```text
 /al demo
 ```
 
-Load demonstration loot and reserve data.
+Load demonstration data.
 
 ```text
 /al help
@@ -299,8 +377,6 @@ Load demonstration loot and reserve data.
 Display the command overview.
 
 ## Project structure
-
-The 0.2.0 development structure is:
 
 ```text
 AscensionLoot/
@@ -311,10 +387,12 @@ AscensionLoot/
 ├── ItemUtils.lua
 ├── SoftReserve.lua
 ├── LootSession.lua
+├── TradeManager.lua
 ├── RollManager.lua
 ├── LootManager.lua
 ├── BagHooks.lua
 ├── UI.lua
+├── MinimapButton.lua
 ├── Events.lua
 ├── README.md
 └── LICENSE
@@ -323,37 +401,43 @@ AscensionLoot/
 ### File responsibilities
 
 `Core.lua`
-: Addon namespace, SavedVariables defaults, shared helpers, version information, item keys, history, and announcements.
+: Namespace, database defaults, shared helpers, version information, announcements, history, and common name/item functions.
 
 `Base64.lua`
-: Base64 decoding for BisBeard RollFor exports.
+: Base64 decoding for BisBeard exports.
 
 `Json.lua`
-: JSON decoding for imported reserve data.
+: JSON decoding.
 
 `ItemUtils.lua`
-: Item-link parsing, bag-item construction, Bind-on-Pickup detection, and tracked-quality filtering.
+: Item parsing, Bind-on-Pickup detection, quality filtering, bag-item construction, and temporary tradeability tooltip scanning.
 
 `SoftReserve.lua`
-: BisBeard import transformation and reserve lookup by item and player.
+: BisBeard import transformation and reserve lookup.
 
 `LootSession.lua`
-: Persistent collected-loot queue and logical item assignment.
+: Persistent collected-loot state, assignment, traded state, and self-kept state.
+
+`TradeManager.lua`
+: Trade queue, player lookup, bag-copy validation, trade opening, trade filling, and completed-trade verification.
 
 `RollManager.lua`
-: Roll creation, eligibility, system-message parsing, tie handling, and winner selection.
+: Roll sessions, raid-name resolution, system-message parsing, priorities, duplicate reserves, ties, multiple copies, and winner selection.
 
 `LootManager.lua`
-: Loot-window reading, automatic collection, master-loot validation, direct solo-SR assignment, and held-item assignment.
+: Loot-window reading, Master Loot collection, warning confirmation, direct assignment, and automatic loot processing.
 
 `BagHooks.lua`
-: Alt-click and Shift+Alt-click handling for supported bag item buttons.
+: Bag snapshots, Group Loot registration, tradeability validation, and modifier-click handling.
 
 `UI.lua`
-: Loot window, settings window, panels, rows, resizing, scaling, and refresh logic.
+: Loot and settings windows, tabs, compact item rows, buttons, resizing, scaling, and refresh logic.
+
+`MinimapButton.lua`
+: Movable minimap launcher and persistent minimap-relative positioning.
 
 `Events.lua`
-: WoW event registration, slash commands, login initialization, loot events, bag updates, and error handling.
+: Event registration, login initialization, loot events, bag updates, trade events, and slash commands.
 
 ## SavedVariables
 
@@ -363,40 +447,45 @@ Ascension Loot stores its data in:
 AscensionLootDB
 ```
 
-The database includes:
+Stored data includes:
 
-- User settings
-- Imported reserve data
-- Raid-session loot queue
+- Settings
+- Imported reserves
+- Persistent loot-session items
 - Loot and assignment history
 - Loot-window geometry
 - Settings-window geometry
+- Minimap-button position
 
-Do not edit the SavedVariables file while the game is running. The client may overwrite external changes during logout or `/reload`.
+Do not edit the SavedVariables file while the game is running.
 
 ## Known limitations
 
-- The addon targets the World of Warcraft 3.3.5a API and still requires live testing on Ascension's customised client.
-- Only one roll can be active at a time.
-- Bag modifier-click support may initially work only with the standard Blizzard bag UI.
-- The addon cannot automatically complete a trade from the holder's bags. It records the recipient and the holder trades manually.
-- The two-hour trade deadline is estimated from the local collection time.
-- A named loot holder must be an eligible master-loot candidate for each item.
-- The named loot holder should run the addon to use bag-based rolling and view the local bag state.
-- Item names may temporarily appear as item IDs until the client has cached the item information.
-- Ascension-specific loot events or custom bag behaviour may require compatibility changes.
+- The addon targets the World of Warcraft 3.3.5a API on Ascension's customised client.
+- Only one roll session can be active at a time.
+- Bag modifier-click support primarily targets the standard Blizzard container interface.
+- Some custom all-in-one bag addons may require additional hooks.
+- The addon cannot press the final trade acceptance button for the player.
+- Temporary tradeability is determined from the item's current tooltip and remains server-authoritative.
+- The designated loot holder must run the addon for local bag tracking and trade assistance.
+- Group Loot registration only sees items entering the local holder's bags.
+- Imported-name prefix matching deliberately refuses ambiguous matches.
+- Local SavedVariables are not a cross-client synchronization system.
 
 ## Safety behaviour
 
-Before awarding from an open corpse, the addon should verify:
+Ascension Loot avoids guessing or silently distributing items when validation fails.
 
-- The player is still the master looter
-- The loot window is open
-- The loot slot still contains the expected item
-- The proposed recipient is still eligible
-- The proposed recipient appears in the master-loot candidate list
+It checks relevant conditions such as:
 
-Shift+Alt-click direct assignment should only bypass rolling when exactly one player soft reserved the item.
+- Current Master Looter status
+- Loot-slot identity
+- Candidate eligibility
+- Expected Bind-on-Pickup confirmation slot
+- Current bag item ID
+- Active temporary raid-trade tooltip
+- Completed trade confirmation
+- Unique imported-name prefix match
 
 ## Non-goals
 
@@ -404,14 +493,12 @@ Ascension Loot intentionally does not provide:
 
 - GDKP auctions
 - Gold bidding
-- Auction countdowns
 - Buyer balances
 - Pot tracking
 - Cuts or distributions
 - Debt tracking
-- Trade-ledger accounting
-- Gargul compatibility
-- Copied Gargul source code
+- Automated final trade acceptance
+- A general-purpose bag addon
 
 ## Licence
 

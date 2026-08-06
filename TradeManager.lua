@@ -278,14 +278,38 @@ local function bagSlotKey(bag, slot)
     return tostring(bag) .. ":" .. tostring(slot)
 end
 
-function Trade:BagSlotMatches(entry, bag, slot)
-    local link = GetContainerItemLink(bag, slot)
+function Trade:BagSlotMatches(
+    entry,
+    bag,
+    slot
+)
+    local link =
+        GetContainerItemLink(
+            bag,
+            slot
+        )
 
     if not link then
         return false
     end
 
-    if tonumber(AL:GetItemID(link)) ~= tonumber(entry.id) then
+    if tonumber(AL:GetItemID(link))
+        ~= tonumber(entry.id)
+    then
+        return false
+    end
+
+    -- Never insert an old, soulbound copy of the
+    -- same item into the trade window.
+    if AL.ItemUtils
+        and AL.ItemUtils
+            .IsBagItemTradeable
+        and not AL.ItemUtils:
+            IsBagItemTradeable(
+                bag,
+                slot
+            )
+    then
         return false
     end
 
@@ -319,6 +343,7 @@ function Trade:FindBagSlot(entry, usedSlots)
                 and link
                 and entry.link
                 and link == entry.link
+                and self:BagSlotMatches(entry, bag, slot)
             then
                 return bag, slot
             end

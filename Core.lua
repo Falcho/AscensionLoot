@@ -51,6 +51,9 @@ local defaults = {
         nextID = 1,
         items = {},
     },
+    minimapButton = {
+        angle = 225
+    },
     windows = {
         loot = {
             point = "CENTER",

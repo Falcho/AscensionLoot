@@ -11,6 +11,15 @@ BagHooks.scanAt = 0
 
 local BAG_SCAN_DELAY = 0.50
 
+local function bagSlotKey(
+    bag,
+    slot
+)
+    return tostring(bag)
+        .. ":"
+        .. tostring(slot)
+end
+
 --------------------------------------------------
 -- Bag-button handling
 --------------------------------------------------
@@ -88,6 +97,7 @@ function BagHooks:BuildBagSnapshot()
                             bag = bag,
                             slot = slot,
                             link = link,
+                            quantity = quantity,
                         }
                     )
                 end
@@ -151,90 +161,163 @@ function BagHooks:ShouldAutomaticallyRegister()
     return true
 end
 
-function BagHooks:GetRepresentativeItem(
-    bucket
+function BagHooks:GetNewTradeableLocations(
+    currentBucket,
+    previousBucket
 )
-    if not bucket
-        or not bucket.slots
-    then
-        return nil
-    end
+    local result = {}
+    local previousQuantities = {}
 
     for _, location in ipairs(
-        bucket.slots
+        previousBucket
+        and previousBucket.slots
+        or {}
     ) do
-        local item =
-            AL.ItemUtils:FromBagSlot(
+        local key =
+            bagSlotKey(
                 location.bag,
                 location.slot
             )
 
-        if item then
-            return item
+        previousQuantities[key] =
+            tonumber(location.quantity)
+            or 1
+    end
+
+    for _, location in ipairs(
+        currentBucket
+        and currentBucket.slots
+        or {}
+    ) do
+        local key =
+            bagSlotKey(
+                location.bag,
+                location.slot
+            )
+
+        local previousQuantity =
+            previousQuantities[key]
+            or 0
+
+        local currentQuantity =
+            tonumber(location.quantity)
+            or 1
+
+        local addedCopies =
+            currentQuantity
+            - previousQuantity
+
+        if addedCopies > 0
+            and AL.ItemUtils:
+                IsBagItemTradeable(
+                    location.bag,
+                    location.slot
+                )
+        then
+            table.insert(
+                result,
+                {
+                    bag = location.bag,
+                    slot = location.slot,
+                    link = location.link,
+                    addedCopies =
+                        addedCopies,
+                }
+            )
         end
     end
 
-    return nil
+    return result
 end
 
 function BagHooks:RegisterNewCopies(
-    bucket,
+    currentBucket,
+    previousBucket,
     newCopyCount
 )
-    local representative =
-        self:GetRepresentativeItem(
-            bucket
+    local tradeableLocations =
+        self:GetNewTradeableLocations(
+            currentBucket,
+            previousBucket
         )
 
-    if not representative then
-        return 0
-    end
-
-    if not AL.ItemUtils:ShouldTrack(
-        representative
-    ) then
+    if #tradeableLocations == 0 then
         return 0
     end
 
     local holder =
         UnitName("player")
 
+    local remaining =
+        tonumber(newCopyCount)
+        or 0
+
     local added = 0
-    local locations =
-        bucket.slots or {}
+    local displayLink = nil
 
-    for index = 1, newCopyCount do
-        local item =
-            AL:ShallowCopy(
-                representative
-            )
-
-        -- Each session entry represents one copy,
-        -- even if an item type can stack.
-        item.quantity = 1
-        item.source = "bag"
-        item.registrationSource =
-            "bag_update"
-
-        if #locations > 0 then
-            local location =
-                locations[
-                    (
-                        (index - 1)
-                        % #locations
-                    ) + 1
-                ]
-
-            item.bag = location.bag
-            item.bagSlot = location.slot
+    for _, location in ipairs(
+        tradeableLocations
+    ) do
+        if remaining <= 0 then
+            break
         end
 
-        AL.LootSession:AddCollected(
-            item,
-            holder
-        )
+        local item =
+            AL.ItemUtils:FromBagSlot(
+                location.bag,
+                location.slot
+            )
 
-        added = added + 1
+        if item
+            and AL.ItemUtils:
+                ShouldTrack(item)
+        then
+            local copiesHere =
+                math.min(
+                    tonumber(
+                        location.addedCopies
+                    ) or 1,
+                    remaining
+                )
+
+            for copyIndex = 1,
+                copiesHere
+            do
+                local copy =
+                    AL:ShallowCopy(item)
+
+                copy.quantity = 1
+                copy.source = "bag"
+
+                copy.registrationSource =
+                    "bag_update"
+
+                copy.tradeableVerified =
+                    true
+
+                copy.tradeableVerifiedAt =
+                    time()
+
+                copy.bag =
+                    location.bag
+
+                copy.bagSlot =
+                    location.slot
+
+                AL.LootSession:
+                    AddCollected(
+                        copy,
+                        holder
+                    )
+
+                added = added + 1
+                remaining = remaining - 1
+
+                displayLink =
+                    copy.link
+                    or copy.name
+            end
+        end
     end
 
     if added > 0 then
@@ -245,9 +328,7 @@ function BagHooks:RegisterNewCopies(
             added == 1
                 and "copy"
                 or "copies",
-            representative.link
-                or representative.name
-                or "item"
+            displayLink or "item"
         ))
 
         if AL.db.settings.autoShowLoot
@@ -294,6 +375,7 @@ function BagHooks:ScanForNewEligibleItems()
             if difference > 0 then
                 self:RegisterNewCopies(
                     currentBucket,
+                    previousBucket,
                     difference
                 )
             end
@@ -342,6 +424,24 @@ function BagHooks:EnsureBagItemRegistered(
     if not item or not item.id then
         return nil,
             "The bag item could not be identified."
+    end
+
+    if item.bag == nil
+        or item.bagSlot == nil
+    then
+        return nil,
+            "The bag location could not be identified."
+    end
+
+    if not AL.ItemUtils:
+        IsBagItemTradeable(
+            item.bag,
+            item.bagSlot
+        )
+    then
+        return nil,
+            "This item does not have an active "
+            .. "raid-trade timer."
     end
 
     local holder =

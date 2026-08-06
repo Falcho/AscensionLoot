@@ -3,6 +3,183 @@ local AL = AscensionLoot
 AL.ItemUtils = AL.ItemUtils or {}
 local ItemUtils = AL.ItemUtils
 
+--------------------------------------------------
+-- Temporary raid-trade tooltip scanner
+--------------------------------------------------
+
+local TRADE_SCAN_TOOLTIP_NAME =
+    "AscensionLootTradeScanTooltip"
+
+local tradeScanTooltip =
+    CreateFrame(
+        "GameTooltip",
+        TRADE_SCAN_TOOLTIP_NAME,
+        UIParent,
+        "GameTooltipTemplate"
+    )
+
+tradeScanTooltip:SetOwner(
+    UIParent,
+    "ANCHOR_NONE"
+)
+
+tradeScanTooltip:Hide()
+
+local tradeTimerPattern = nil
+
+local function escapeLuaPattern(value)
+    return (
+        tostring(value or ""):gsub(
+            "([%(%)%.%%%+%-%*%?%[%]%^%$])",
+            "%%%1"
+        )
+    )
+end
+
+local function getTradeTimerPattern()
+    if tradeTimerPattern ~= nil then
+        return tradeTimerPattern
+    end
+
+    local template =
+        _G.BIND_TRADE_TIME_REMAINING
+
+    if type(template) ~= "string"
+        or template == ""
+    then
+        tradeTimerPattern = false
+        return nil
+    end
+
+    local placeholder = "\001"
+
+    -- Support both ordinary and positional
+    -- format placeholders.
+    template = template:gsub(
+        "%%%d+%$[sd]",
+        placeholder
+    )
+
+    template = template:gsub(
+        "%%[sd]",
+        placeholder
+    )
+
+    template =
+        escapeLuaPattern(template)
+
+    template = template:gsub(
+        placeholder,
+        ".+"
+    )
+
+    tradeTimerPattern = template
+
+    return tradeTimerPattern
+end
+
+local function containsTradeTimer(text)
+    if type(text) ~= "string"
+        or text == ""
+    then
+        return false
+    end
+
+    local pattern =
+        getTradeTimerPattern()
+
+    if pattern
+        and text:find(pattern)
+    then
+        return true
+    end
+
+    -- English fallback for customised clients where
+    -- BIND_TRADE_TIME_REMAINING is unavailable.
+    local lowerText =
+        string.lower(text)
+
+    if lowerText:find(
+        "you may trade this item",
+        1,
+        true
+    ) then
+        return true
+    end
+
+    return false
+end
+
+function ItemUtils:IsBagItemTradeable(
+    bag,
+    slot
+)
+    if bag == nil or slot == nil then
+        return false
+    end
+
+    if not GetContainerItemLink(
+        bag,
+        slot
+    ) then
+        return false
+    end
+
+    tradeScanTooltip:Hide()
+    tradeScanTooltip:ClearLines()
+
+    tradeScanTooltip:SetOwner(
+        UIParent,
+        "ANCHOR_NONE"
+    )
+
+    tradeScanTooltip:SetBagItem(
+        bag,
+        slot
+    )
+
+    local tooltipName =
+        tradeScanTooltip:GetName()
+
+    local lineCount =
+        tradeScanTooltip:NumLines() or 0
+
+    for lineIndex = 1, lineCount do
+        local leftLine =
+            _G[
+                tooltipName
+                .. "TextLeft"
+                .. lineIndex
+            ]
+
+        local rightLine =
+            _G[
+                tooltipName
+                .. "TextRight"
+                .. lineIndex
+            ]
+
+        local leftText =
+            leftLine
+            and leftLine:GetText()
+
+        local rightText =
+            rightLine
+            and rightLine:GetText()
+
+        if containsTradeTimer(leftText)
+            or containsTradeTimer(rightText)
+        then
+            tradeScanTooltip:Hide()
+            return true
+        end
+    end
+
+    tradeScanTooltip:Hide()
+
+    return false
+end
+
 local tooltip = CreateFrame(
     "GameTooltip",
     "AscensionLootScannerTooltip",
