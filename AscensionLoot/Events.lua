@@ -101,13 +101,14 @@ eventFrame:SetScript(
         if AL.Roll then
             AL.Roll:OnUpdate(elapsed)
         end
-
         if AL.Loot then
             AL.Loot:OnUpdate()
         end
-
         if AL.BagHooks then
             AL.BagHooks:OnUpdate()
+        end
+        if AL.SoftReserve then
+            AL.SoftReserve:OnUpdate()
         end
     end
 )

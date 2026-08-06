@@ -1315,11 +1315,41 @@ function UI:RefreshReserves()
     local lineIndex = 1
     for _, player in ipairs(AL.SoftReserve:GetSortedPlayers()) do
         local items = {}
-        for itemID, item in pairs(player.items) do
-            local itemName, itemLink = GetItemInfo(itemID)
-            local label = itemLink or itemName or ("Item #" .. itemID)
-            if item.count > 1 then label = label .. " x" .. item.count end
-            table.insert(items, { id = itemID, text = label })
+        for itemID, item in pairs(
+            player.items
+        ) do
+            local itemInfo =
+                AL.SoftReserve:
+                    GetDisplayItemInfo(
+                        itemID
+                    )
+
+            local label =
+                itemInfo.link
+                or itemInfo.name
+                or (
+                    "Loading item "
+                    .. tostring(itemID)
+                    .. "..."
+                )
+
+            if item.count > 1 then
+                label =
+                    label
+                    .. " x"
+                    .. item.count
+            end
+
+            table.insert(
+                items,
+                {
+                    id =
+                        itemID,
+
+                    text =
+                        label,
+                }
+            )
         end
         table.sort(items, function(left, right) return left.id < right.id end)
 

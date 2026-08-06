@@ -3,10 +3,39 @@ local AL = AscensionLoot
 AL.SoftReserve = AL.SoftReserve or {}
 local SR = AL.SoftReserve
 
+local ASCENSION_ITEM_OFFSET =
+    300000
+
+local function addUniqueID(
+    result,
+    seen,
+    itemID
+)
+    itemID =
+        tonumber(itemID)
+
+    if not itemID
+        or itemID <= 0
+        or seen[itemID]
+    then
+        return
+    end
+
+    seen[itemID] = true
+
+    table.insert(
+        result,
+        itemID
+    )
+end
+
 SR.byItem = {}
 SR.byPlayer = {}
 SR.hardReserves = {}
 SR.metadata = {}
+SR.pendingItemInfo =
+    SR.pendingItemInfo or {}
+SR.nextItemInfoCheck = 0
 
 local function addPlayerReserve(playerName, itemID, quality)
     local displayName =
@@ -54,6 +83,154 @@ local function addPlayerReserve(playerName, itemID, quality)
     playerEntry.items[itemID].count = playerEntry.items[itemID].count + 1
 end
 
+function SR:GetItemIDCandidates(itemID)
+    itemID =
+        tonumber(itemID)
+
+    local result = {}
+    local seen = {}
+
+    addUniqueID(
+        result,
+        seen,
+        itemID
+    )
+
+    if not itemID then
+        return result
+    end
+
+    --------------------------------------------------
+    -- BisBeard/Ascension variant ID to base ID
+    --------------------------------------------------
+
+    if itemID >= ASCENSION_ITEM_OFFSET
+        and itemID
+            < ASCENSION_ITEM_OFFSET
+                + 100000
+    then
+        addUniqueID(
+            result,
+            seen,
+            itemID
+                - ASCENSION_ITEM_OFFSET
+        )
+
+    --------------------------------------------------
+    -- Base ID to possible Ascension variant ID
+    --------------------------------------------------
+
+    elseif itemID < 100000 then
+        addUniqueID(
+            result,
+            seen,
+            itemID
+                + ASCENSION_ITEM_OFFSET
+        )
+    end
+
+    return result
+end
+
+function SR:QueueItemInfoRequest(itemID)
+    local now =
+        GetTime()
+
+    for _, candidateID in ipairs(
+        self:GetItemIDCandidates(
+            itemID
+        )
+    ) do
+        -- Calling GetItemInfo initiates the cache
+        -- request when the item is not yet cached.
+        GetItemInfo(candidateID)
+
+        self.pendingItemInfo[
+            candidateID
+        ] =
+            now + 12
+    end
+end
+
+function SR:GetDisplayItemInfo(itemID)
+    local candidates =
+        self:GetItemIDCandidates(
+            itemID
+        )
+
+    --------------------------------------------------
+    -- Prefer the exact imported item ID
+    --------------------------------------------------
+
+    for _, candidateID in ipairs(
+        candidates
+    ) do
+        local itemName,
+            itemLink,
+            quality,
+            itemLevel,
+            requiredLevel,
+            itemType,
+            itemSubType,
+            stackCount,
+            equipLocation,
+            texture =
+                GetItemInfo(
+                    candidateID
+                )
+
+        if itemName or itemLink then
+            return {
+                requestedID =
+                    tonumber(itemID),
+
+                resolvedID =
+                    candidateID,
+
+                name =
+                    itemName,
+
+                link =
+                    itemLink,
+
+                quality =
+                    quality,
+
+                texture =
+                    texture,
+            }
+        end
+    end
+
+    --------------------------------------------------
+    -- Neither ID is cached yet
+    --------------------------------------------------
+
+    self:QueueItemInfoRequest(
+        itemID
+    )
+
+    return {
+        requestedID =
+            tonumber(itemID),
+
+        resolvedID =
+            nil,
+
+        name =
+            nil,
+
+        link =
+            nil,
+
+        quality =
+            nil,
+
+        texture =
+            nil,
+    }
+end
+
 function SR:Rebuild(rawData)
     self.byItem = {}
     self.byPlayer = {}
@@ -87,7 +264,20 @@ function SR:Rebuild(rawData)
 end
 
 function SR:LoadFromDatabase()
-    self:Rebuild(AL.db and AL.db.softres and AL.db.softres.raw or nil)
+    self:Rebuild(
+        AL.db
+        and AL.db.softres
+        and AL.db.softres.raw
+        or nil
+    )
+
+    for itemID in pairs(
+        self.byItem
+    ) do
+        self:QueueItemInfoRequest(
+            itemID
+        )
+    end
 end
 
 function SR:Validate(data)
@@ -133,6 +323,14 @@ function SR:Import(encoded)
     AL.db.softres.importedAt = time()
     self:Rebuild(data)
 
+    for itemID in pairs(
+        self.byItem
+    ) do
+        self:QueueItemInfoRequest(
+            itemID
+        )
+    end
+
     if AL.UI then AL.UI:RefreshAll() end
     return true, self:GetSummaryText()
 end
@@ -145,7 +343,20 @@ function SR:Clear()
 end
 
 function SR:GetItem(itemID)
-    return self.byItem[tonumber(itemID)]
+    for _, candidateID in ipairs(
+        self:GetItemIDCandidates(
+            itemID
+        )
+    ) do
+        local item =
+            self.byItem[candidateID]
+
+        if item then
+            return item
+        end
+    end
+
+    return nil
 end
 
 function SR:GetReservers(itemID)
@@ -154,11 +365,25 @@ function SR:GetReservers(itemID)
 end
 
 function SR:IsReserved(itemID)
-    return self.byItem[tonumber(itemID)] ~= nil
+    return self:GetItem(itemID)
+        ~= nil
 end
 
 function SR:IsHardReserved(itemID)
-    return self.hardReserves[tonumber(itemID)] ~= nil
+    for _, candidateID in ipairs(
+        self:GetItemIDCandidates(
+            itemID
+        )
+    ) do
+        if self.hardReserves[
+            candidateID
+        ]
+        then
+            return true
+        end
+    end
+
+    return false
 end
 
 function SR:GetSummary()
@@ -203,6 +428,67 @@ function SR:GetSortedPlayers()
         return string.lower(left.name) < string.lower(right.name)
     end)
     return players
+end
+
+function SR:OnUpdate()
+    if not next(
+        self.pendingItemInfo
+    ) then
+        return
+    end
+
+    local now =
+        GetTime()
+
+    if now
+        < (
+            self.nextItemInfoCheck
+            or 0
+        )
+    then
+        return
+    end
+
+    self.nextItemInfoCheck =
+        now + 0.5
+
+    local informationLoaded =
+        false
+
+    for itemID,
+        expiresAt in pairs(
+            self.pendingItemInfo
+        )
+    do
+        local itemName,
+            itemLink =
+                GetItemInfo(
+                    itemID
+                )
+
+        if itemName or itemLink then
+            self.pendingItemInfo[
+                itemID
+            ] = nil
+
+            informationLoaded =
+                true
+
+        elseif now >= expiresAt then
+            -- Stop retrying IDs that the server does
+            -- not recognize.
+            self.pendingItemInfo[
+                itemID
+            ] = nil
+        end
+    end
+
+    if informationLoaded
+        and AL.UI
+        and AL.UI.RefreshReserves
+    then
+        AL.UI:RefreshReserves()
+    end
 end
 
 function SR:LoadDemo()
