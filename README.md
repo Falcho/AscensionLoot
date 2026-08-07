@@ -4,7 +4,7 @@ AscensionLoot is a World of Warcraft 3.3.5a raid-loot addon for Ascension: Conqu
 
 It is built for raids that collect loot on one designated holder and distribute it later using BisBeard soft reserves, structured rolls, persistent loot tracking, and assisted trading.
 
-> **Current version:** 0.4.0-beta.1  
+> **Current version:** 0.4.1  
 > This is a public beta intended for raid testing and user feedback.
 
 ## Features

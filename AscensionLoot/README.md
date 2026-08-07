@@ -8,7 +8,7 @@ Ascension Loot does **not** include GDKP auctions, gold bidding, pots, cuts, bal
 
 ## Development status
 
-Current public-beta version: **0.4.0-beta.1**
+Current public-beta version: **0.4.1**
 
 This is a pre-release intended for raid testing and user feedback.
 
