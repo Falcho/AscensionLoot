@@ -31,6 +31,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if AL.RollSync then
             AL.RollSync:Initialize()
         end
+        if AL.PlayerRollUI then
+            AL.PlayerRollUI:Initialize()
+        end
         if AL.BagHooks then
             AL.BagHooks:Initialize()
         end

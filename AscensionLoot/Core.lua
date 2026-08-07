@@ -104,6 +104,13 @@ local defaults = {
             height = 560,
             scale = 1,
         },
+
+        playerRoll = {
+            point = "CENTER",
+            relativePoint = "CENTER",
+            x = 0,
+            y = -150,
+        },
     },
 }
 
