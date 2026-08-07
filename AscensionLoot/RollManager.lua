@@ -528,6 +528,14 @@ function Roll:BeginTie(tiedResults)
         duration
     ))
 
+    if AL.RollSync then
+        AL.RollSync:BroadcastTie(
+            active,
+            expectedMaximum,
+            duration
+        )
+    end
+
     if AL.UI then
         AL.UI:RefreshAll()
     end
@@ -614,6 +622,12 @@ function Roll:StartForItem(item)
         duration
     ))
 
+    if AL.RollSync then
+        AL.RollSync:BroadcastStart(
+            self.active
+        )
+    end
+
     if AL.UI then
         AL.UI:RefreshAll()
     end
@@ -675,6 +689,15 @@ function Roll:HandleTieRoll(
             playerName,
             value
         )
+
+    if AL.RollSync then
+        AL.RollSync:BroadcastTieRoll(
+            active,
+            playerName,
+            value,
+            maximum
+        )
+    end
 
     if AL.UI then
         AL.UI:RefreshRoll()
@@ -764,6 +787,16 @@ function Roll:HandleSystemMessage(message)
         category
     )
 
+    if AL.RollSync then
+        AL.RollSync:BroadcastRoll(
+            active,
+            playerName,
+            value,
+            category,
+            #entry.rolls
+        )
+    end
+
     if AL.UI then
         AL.UI:RefreshRoll()
     end
@@ -798,6 +831,12 @@ function Roll:Finish()
                 active.item
             )
         ))
+
+        if AL.RollSync then
+            AL.RollSync:BroadcastFinish(
+                active
+            )
+        end
 
         if AL.UI then
             AL.UI:RefreshAll()
@@ -885,6 +924,12 @@ function Roll:Finish()
         )
     ))
 
+    if AL.RollSync then
+        AL.RollSync:BroadcastFinish(
+            active
+        )
+    end
+
     if AL.UI then
         AL.UI:RefreshAll()
     end
@@ -892,6 +937,12 @@ end
 
 function Roll:Cancel()
     if self.active then
+        if AL.RollSync then
+            AL.RollSync:BroadcastCancel(
+                self.active
+            )
+        end
+
         AL:Print(
             "Roll cancelled for "
                 .. tostring(
@@ -902,7 +953,8 @@ function Roll:Cancel()
         )
     end
 
-    self.active = nil
+    self.active =
+        nil
 
     if AL.UI then
         AL.UI:RefreshAll()

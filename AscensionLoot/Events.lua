@@ -10,6 +10,7 @@ eventFrame:RegisterEvent("LOOT_SLOT_CHANGED")
 eventFrame:RegisterEvent("LOOT_BIND_CONFIRM")
 eventFrame:RegisterEvent("BAG_UPDATE")
 eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 eventFrame:RegisterEvent("UI_ERROR_MESSAGE")
 eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
@@ -27,6 +28,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_LOGIN" then
         AL.UI:Create()
 
+        if AL.RollSync then
+            AL.RollSync:Initialize()
+        end
         if AL.BagHooks then
             AL.BagHooks:Initialize()
         end
@@ -67,6 +71,21 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 
         if AL.Roll and type(systemMessage) == "string" then
             AL.Roll:HandleSystemMessage(systemMessage)
+        end
+            elseif event == "CHAT_MSG_ADDON" then
+        local prefix,
+            message,
+            distribution,
+            sender =
+                ...
+
+        if AL.RollSync then
+            AL.RollSync:OnAddonMessage(
+                prefix,
+                message,
+                distribution,
+                sender
+            )
         end
     elseif event == "UI_ERROR_MESSAGE" then
         local message = ...

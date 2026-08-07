@@ -13,6 +13,7 @@ SoftReserve.lua
 LootSession.lua
 TradeManager.lua
 RollManager.lua
+RollSync.lua
 LootManager.lua
 BagHooks.lua
 UI.lua
