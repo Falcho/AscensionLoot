@@ -52,6 +52,11 @@ Loot.collectionQueue = {}
 Loot.pendingCollection = nil
 Loot.pendingMasterLoot = nil
 
+-- Tracked Master Loot items waiting to be physically
+-- confirmed in this client's bags before auto-opening
+-- the loot window.
+Loot.pendingAutoShows = {}
+
 Loot.autoLooting = false
 Loot.nextAutoAction = 0
 Loot.isOpen = false
@@ -82,6 +87,164 @@ local function lootSlotItem(slot)
     item.key = AL:GetItemKey(item)
 
     return item
+end
+
+--------------------------------------------------
+-- Bag confirmation
+--------------------------------------------------
+
+function Loot:GetBagItemCount(
+    itemID
+)
+    local wantedItemID =
+        tonumber(
+            itemID
+        )
+
+    if not wantedItemID then
+        return 0
+    end
+
+    local total =
+        0
+
+    for bag = 0, 4 do
+        local slotCount =
+            GetContainerNumSlots(
+                bag
+            ) or 0
+
+        for slot = 1, slotCount do
+            local link =
+                GetContainerItemLink(
+                    bag,
+                    slot
+                )
+
+            if link
+                and AL:GetItemID(link)
+                    == wantedItemID
+            then
+                local _,
+                    quantity =
+                        GetContainerItemInfo(
+                            bag,
+                            slot
+                        )
+
+                total =
+                    total
+                    + (
+                        tonumber(
+                            quantity
+                        )
+                        or 1
+                    )
+            end
+        end
+    end
+
+    return total
+end
+
+function Loot:QueueAutoShowWhenBagged(
+    itemID,
+    previousCount
+)
+    if not AL.db
+        or not AL.db.settings
+        or AL.db.settings.autoShowLoot
+            == false
+        or not AL.UI
+    then
+        return
+    end
+
+    self.pendingAutoShows =
+        self.pendingAutoShows
+        or {}
+
+    table.insert(
+        self.pendingAutoShows,
+        {
+            itemID =
+                tonumber(
+                    itemID
+                ),
+
+            previousCount =
+                tonumber(
+                    previousCount
+                ) or 0,
+
+            -- Bag updates normally arrive almost
+            -- immediately. The timeout prevents stale
+            -- checks remaining forever if the server
+            -- never delivers the item.
+            expiresAt =
+                GetTime() + 5,
+        }
+    )
+
+    -- It is possible that the bag update has already
+    -- happened by the time LOOT_SLOT_CLEARED arrives.
+    self:ProcessPendingAutoShows()
+end
+
+function Loot:ProcessPendingAutoShows()
+    local pending =
+        self.pendingAutoShows
+
+    if not pending
+        or #pending == 0
+    then
+        return
+    end
+
+    for index =
+        #pending,
+        1,
+        -1
+    do
+        local entry =
+            pending[index]
+
+        local currentCount =
+            self:GetBagItemCount(
+                entry.itemID
+            )
+
+        if currentCount
+            > (
+                entry.previousCount
+                or 0
+            )
+        then
+            table.remove(
+                pending,
+                index
+            )
+
+            if AL.db.settings.autoShowLoot
+                and AL.UI
+            then
+                AL.UI:ShowLoot()
+            end
+
+        elseif GetTime()
+            >= (
+                entry.expiresAt
+                or 0
+            )
+        then
+            -- Do not auto-open if we never actually
+            -- observed the item enter the bag.
+            table.remove(
+                pending,
+                index
+            )
+        end
+    end
 end
 
 function Loot:IsMasterLooter()
@@ -154,12 +317,6 @@ function Loot:OnOpened(autoLoot)
     self:Refresh()
     self:BuildCollectionQueue()
     self:BuildAutoQueue()
-
-    if AL.db.settings.autoShowLoot
-        and AL.UI
-    then
-        AL.UI:ShowLoot()
-    end
 end
 
 function Loot:OnClosed()
@@ -297,6 +454,31 @@ function Loot:OnSlotCleared(slot)
                 or collection.item.name,
             collection.holder
         ))
+
+        --------------------------------------------------
+        -- Only auto-open once the item is physically
+        -- visible in this loot holder's bags.
+        --------------------------------------------------
+
+        if collection.holderIsPlayer then
+            self:QueueAutoShowWhenBagged(
+                collection.item.id,
+                collection.bagCountBefore
+                    or 0
+            )
+
+        elseif AL.db.settings.autoShowLoot
+            and AL.UI
+        then
+            --------------------------------------------------
+            -- We cannot inspect another character's bags.
+            -- LOOT_SLOT_CLEARED is therefore the strongest
+            -- confirmation available when a named remote
+            -- loot holder is configured.
+            --------------------------------------------------
+
+            AL.UI:ShowLoot()
+        end
     end
 
     --------------------------------------------------
@@ -728,10 +910,32 @@ function Loot:ProcessAutoQueue()
         end
 
         if action.trackInSession then
+            local holderIsPlayer =
+                AL:NormalizeName(holder)
+                == AL:NormalizeName(
+                    UnitName("player")
+                )
+
+            local bagCountBefore =
+                nil
+
+            if holderIsPlayer then
+                bagCountBefore =
+                    self:GetBagItemCount(
+                        action.item.id
+                    )
+            end
+
             self.pendingCollection = {
                 slot = action.slot,
                 item = action.item,
                 holder = holder,
+
+                holderIsPlayer =
+                    holderIsPlayer,
+
+                bagCountBefore =
+                    bagCountBefore,
             }
         else
             self.pendingMasterLoot = {
@@ -775,6 +979,7 @@ function Loot:ProcessAutoQueue()
 end
 
 function Loot:OnUpdate()
+    self:ProcessPendingAutoShows()
     self:ProcessAutoQueue()
 end
 

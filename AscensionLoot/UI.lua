@@ -592,17 +592,169 @@ function UI:CreateLootPanel(panel)
     rollPanel.results:SetJustifyH("LEFT")
     rollPanel.results:SetText("")
 
-    rollPanel.finish = createButton(rollPanel, "Finish", 75, 22)
-    rollPanel.finish:SetPoint("BOTTOMLEFT", rollPanel, "BOTTOMLEFT", 12, 10)
-    rollPanel.finish:SetScript("OnClick", function() AL.Roll:Finish() end)
+    --------------------------------------------------
+    -- Loot-holder roll buttons
+    --------------------------------------------------
 
-    rollPanel.cancel = createButton(rollPanel, "Cancel", 75, 22)
-    rollPanel.cancel:SetPoint("LEFT", rollPanel.finish, "RIGHT", 8, 0)
-    rollPanel.cancel:SetScript("OnClick", function() AL.Roll:Cancel() end)
+    rollPanel.roll = createButton(rollPanel,"Roll",60,22)
+    rollPanel.roll:SetPoint("BOTTOMLEFT", rollPanel, "BOTTOMLEFT", 12, 10)
 
-    rollPanel.award = createButton(rollPanel, "Award Winners", 115, 22)
-    rollPanel.award:SetPoint("LEFT", rollPanel.cancel, "RIGHT", 8, 0)
-    rollPanel.award:SetScript("OnClick", function() if AL.Roll.active then
+    rollPanel.roll:SetScript(
+        "OnClick",
+        function()
+            local active =
+                AL.Roll
+                and AL.Roll.active
+
+            if not active then
+                return
+            end
+
+            if active.state ~= "rolling"
+                and active.state ~= "tie"
+            then
+                return
+            end
+
+            if active.state == "tie" then
+                local expectedMaximum =
+                    active.tie
+                    and tonumber(
+                        active.tie.expectedMaximum
+                    )
+                    or 100
+
+                if expectedMaximum ~= 100 then
+                    return
+                end
+            end
+
+            RandomRoll(
+                1,
+                100
+            )
+        end
+    )
+
+    rollPanel.os = createButton(
+        rollPanel,
+        "OS",
+        60,
+        22
+    )
+
+    rollPanel.os:SetPoint(
+        "LEFT",
+        rollPanel.roll,
+        "RIGHT",
+        8,
+        0
+    )
+
+    rollPanel.os:SetScript(
+        "OnClick",
+        function()
+            local active =
+                AL.Roll
+                and AL.Roll.active
+
+            if not active then
+                return
+            end
+
+            if active.state ~= "rolling"
+                and active.state ~= "tie"
+            then
+                return
+            end
+
+            if active.state == "tie" then
+                local expectedMaximum =
+                    active.tie
+                    and tonumber(
+                        active.tie.expectedMaximum
+                    )
+                    or 100
+
+                if expectedMaximum ~= 99 then
+                    return
+                end
+            end
+
+            RandomRoll(
+                1,
+                99
+            )
+        end
+    )
+
+    --------------------------------------------------
+    -- Roll controls
+    --------------------------------------------------
+
+    rollPanel.finish = createButton(
+        rollPanel,
+        "Finish",
+        75,
+        22
+    )
+
+    rollPanel.finish:SetPoint(
+        "LEFT",
+        rollPanel.os,
+        "RIGHT",
+        8,
+        0
+    )
+
+    rollPanel.finish:SetScript(
+        "OnClick",
+        function()
+            AL.Roll:Finish()
+        end
+    )
+
+    rollPanel.cancel = createButton(
+        rollPanel,
+        "Cancel",
+        75,
+        22
+    )
+
+    rollPanel.cancel:SetPoint(
+        "LEFT",
+        rollPanel.finish,
+        "RIGHT",
+        8,
+        0
+    )
+
+    rollPanel.cancel:SetScript(
+        "OnClick",
+        function()
+            AL.Roll:Cancel()
+        end
+    )
+
+    rollPanel.award = createButton(
+        rollPanel,
+        "Award Winners",
+        115,
+        22
+    )
+
+    rollPanel.award:SetPoint(
+        "LEFT",
+        rollPanel.cancel,
+        "RIGHT",
+        8,
+        0
+    )
+
+    rollPanel.award:SetScript(
+        "OnClick",
+        function()
+            if AL.Roll.active then
                 AL.Loot:AwardActiveWinners(
                     AL.Roll.active.item
                 )
@@ -1078,6 +1230,8 @@ function UI:RefreshRoll()
             "Check the Lua errors in RollManager.lua."
         )
 
+        self.rollPanel.roll:Disable()
+        self.rollPanel.os:Disable()
         self.rollPanel.finish:Disable()
         self.rollPanel.cancel:Disable()
         self.rollPanel.award:Disable()
@@ -1099,6 +1253,8 @@ function UI:RefreshRoll()
                 .. "SR / MS / OS roll."
         )
 
+        self.rollPanel.roll:Disable()
+        self.rollPanel.os:Disable()
         self.rollPanel.finish:Disable()
         self.rollPanel.cancel:Disable()
         self.rollPanel.award:Disable()
@@ -1215,6 +1371,39 @@ function UI:RefreshRoll()
     self.rollPanel.results:SetText(
         table.concat(lines, "\n")
     )
+
+    --------------------------------------------------
+    -- Loot-holder Roll / OS availability
+    --------------------------------------------------
+
+    if active.state == "rolling" then
+        self.rollPanel.roll:Enable()
+        self.rollPanel.os:Enable()
+
+    elseif active.state == "tie" then
+        local expectedMaximum =
+            active.tie
+            and tonumber(
+                active.tie.expectedMaximum
+            )
+            or 100
+
+        if expectedMaximum == 99 then
+            self.rollPanel.roll:Disable()
+            self.rollPanel.os:Enable()
+        else
+            self.rollPanel.roll:Enable()
+            self.rollPanel.os:Disable()
+        end
+
+    else
+        self.rollPanel.roll:Disable()
+        self.rollPanel.os:Disable()
+    end
+
+    --------------------------------------------------
+    -- Distributor controls
+    --------------------------------------------------
 
     if active.state == "rolling"
         or active.state == "tie"
