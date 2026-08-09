@@ -4,8 +4,7 @@ AscensionLoot is a World of Warcraft 3.3.5a raid-loot addon for Ascension: Conqu
 
 It is built for raids that collect loot on one designated holder and distribute it later using BisBeard soft reserves, structured rolls, persistent loot tracking, and assisted trading.
 
-> **Current version:** 0.4.1  
-> This is a public beta intended for raid testing and user feedback.
+> **Current version:** 0.5.0
 
 ## Features
 
@@ -14,6 +13,10 @@ It is built for raids that collect loot on one designated holder and distribute 
 - Master Loot and Group Loot workflows
 - SR, MS, and OS roll handling
 - Multiple-copy and duplicate-SR support
+- Synchronized roll window for raid members using AscensionLoot
+- Live roll timer and accepted roll results
+- Roll, OS, and Pass buttons for participating players
+- Roll and OS controls for the loot holder
 - Safe raid-roster name matching
 - Temporary raid-trade timer validation
 - Assisted trade opening and item placement
@@ -120,8 +123,8 @@ Only items with an active temporary raid-trade timer are accepted.
 
 ## Minimap button
 
-- **Left click:** Open the loot window
-- **Right click:** Open the Import page
+- **Left click:** Toggle the loot window
+- **Right click:** Toggle the Import page
 - **Drag:** Move the button
 
 The button can be hidden through Settings.
