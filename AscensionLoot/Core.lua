@@ -71,6 +71,10 @@ local defaults = {
 
         autoShowLoot = true,
         showMinimapButton = true,
+
+        -- The compact player roll window always works in
+        -- raids. Normal parties require explicit opt-in.
+        showPlayerRollWindowInParty = false,
     },
     softres = {
         raw = nil,

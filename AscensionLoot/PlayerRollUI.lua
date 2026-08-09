@@ -75,6 +75,81 @@ local function getRemote()
 end
 
 --------------------------------------------------
+-- Group eligibility
+--------------------------------------------------
+
+function PlayerUI:CanDisplay()
+    --------------------------------------------------
+    -- Always available in raids.
+    --------------------------------------------------
+
+    if AL:IsInRaid() then
+        return true
+    end
+
+    --------------------------------------------------
+    -- Normal parties are opt-in.
+    --------------------------------------------------
+
+    if AL:IsInParty() then
+        return AL.db
+            and AL.db.settings
+            and AL.db.settings
+                .showPlayerRollWindowInParty
+                == true
+    end
+
+    --------------------------------------------------
+    -- Never display while solo.
+    --------------------------------------------------
+
+    return false
+end
+
+function PlayerUI:RefreshGroupVisibility()
+    if not self.frame then
+        return
+    end
+
+    if not self:CanDisplay() then
+        self.frame:Hide()
+        return
+    end
+
+    local remote =
+        getRemote()
+
+    if not remote then
+        return
+    end
+
+    --------------------------------------------------
+    -- Do not resurrect an old finished roll merely
+    -- because the player joined a raid or enabled
+    -- party support.
+    --------------------------------------------------
+
+    if remote.state ~= "rolling"
+        and remote.state ~= "tie"
+    then
+        return
+    end
+
+    --------------------------------------------------
+    -- Respect Pass / close-X dismissal.
+    --------------------------------------------------
+
+    if self.dismissedRollID
+        == remote.id
+    then
+        return
+    end
+
+    self:Refresh()
+    self.frame:Show()
+end
+
+--------------------------------------------------
 -- Position
 --------------------------------------------------
 
@@ -243,7 +318,7 @@ function PlayerUI:RollOffSpec()
     )
 end
 
-function PlayerUI:Pass()
+function PlayerUI:DismissCurrent()
     local remote =
         getRemote()
 
@@ -255,6 +330,10 @@ function PlayerUI:Pass()
     if self.frame then
         self.frame:Hide()
     end
+end
+
+function PlayerUI:Pass()
+    self:DismissCurrent()
 end
 
 --------------------------------------------------
@@ -756,6 +835,11 @@ function PlayerUI:OnSyncChanged(
         self.currentRollID =
             remote.id
 
+        --------------------------------------------------
+        -- A new roll clears Pass / close-X dismissal
+        -- from the previous roll.
+        --------------------------------------------------
+
         self.dismissedRollID =
             nil
 
@@ -769,12 +853,29 @@ function PlayerUI:OnSyncChanged(
         end
     end
 
+    --------------------------------------------------
+    -- Keep internal state refreshed even if this group
+    -- type is configured not to display the window.
+    --------------------------------------------------
+
     self:Refresh()
 
     --------------------------------------------------
-    -- Pass only dismisses the current roll.
-    --
-    -- Updates for the same roll must not reopen it.
+    -- Never display outside an eligible group.
+    --------------------------------------------------
+
+    if not self:CanDisplay() then
+        if self.frame then
+            self.frame:Hide()
+        end
+
+        return
+    end
+
+    --------------------------------------------------
+    -- Pass or close-X dismisses only this roll.
+    -- Later updates belonging to the same roll must
+    -- not reopen the frame.
     --------------------------------------------------
 
     if self.dismissedRollID
@@ -882,6 +983,34 @@ function PlayerUI:Initialize()
         },
     })
 
+    --------------------------------------------------
+    -- Close button
+    --------------------------------------------------
+
+    frame.closeButton =
+        CreateFrame(
+            "Button",
+            nil,
+            frame,
+            "UIPanelCloseButton"
+        )
+
+    frame.closeButton:SetPoint(
+        "TOPRIGHT",
+        frame,
+        "TOPRIGHT",
+        -4,
+        -4
+    )
+
+    frame.closeButton:SetScript(
+        "OnClick",
+        function()
+            PlayerUI:
+                DismissCurrent()
+        end
+    )
+
     frame:SetScript(
         "OnDragStart",
         function(self)
@@ -949,7 +1078,7 @@ function PlayerUI:Initialize()
         "TOPRIGHT",
         frame,
         "TOPRIGHT",
-        -18,
+        -42,
         -14
     )
 

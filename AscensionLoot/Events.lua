@@ -96,8 +96,17 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             AL:Print(message or "The item could not be awarded.", 1, 0.3, 0.3)
             AL.Loot.pendingAward = nil
         end
-    elseif event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
-        if AL.UI then AL.UI:RefreshAll() end
+    elseif event == "RAID_ROSTER_UPDATE"
+        or event == "PARTY_MEMBERS_CHANGED"
+    then
+        if AL.UI then
+            AL.UI:RefreshAll()
+        end
+
+        if AL.PlayerRollUI then
+            AL.PlayerRollUI:
+                RefreshGroupVisibility()
+        end
     elseif event == "TRADE_SHOW" then
         if AL.Trade then
             AL.Trade:OnTradeShow()

@@ -2165,6 +2165,20 @@ function UI:CreateSettingsPanel(panel)
         end
     )
 
+    addCheckbox(
+        "Show player roll window in parties",
+        "showPlayerRollWindowInParty",
+        330,
+        -314,
+        "Allows the compact Roll / OS / Pass window in normal parties. The window is always enabled in raids and never shown while solo.",
+        function()
+            if AL.PlayerRollUI then
+                AL.PlayerRollUI:
+                    RefreshGroupVisibility()
+            end
+        end
+    )
+
     --------------------------------------------------
     -- Roll duration
     --------------------------------------------------
@@ -2181,7 +2195,7 @@ function UI:CreateSettingsPanel(panel)
         panel,
         "TOPLEFT",
         335,
-        -330
+        -350
     )
 
     durationLabel:SetText(
