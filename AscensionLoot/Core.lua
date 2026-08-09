@@ -75,6 +75,10 @@ local defaults = {
         -- The compact player roll window always works in
         -- raids. Normal parties require explicit opt-in.
         showPlayerRollWindowInParty = false,
+
+        -- Register the two main addon windows as normal
+        -- WoW ESC-closeable special frames.
+        closeWindowsWithEscape = true,
     },
     softres = {
         raw = nil,

@@ -301,6 +301,84 @@ local function makeResizable(frame, databaseKey, minWidth, minHeight)
     frame.resizeGrip = grip
 end
 
+--------------------------------------------------
+-- ESC-close handling
+--------------------------------------------------
+
+local ESCAPE_FRAME_NAMES = {
+    "AscensionLootLootFrame",
+    "AscensionLootSettingsFrame",
+}
+
+local function removeSpecialFrame(
+    frameName
+)
+    if not UISpecialFrames then
+        return
+    end
+
+    for index =
+        #UISpecialFrames,
+        1,
+        -1
+    do
+        if UISpecialFrames[index]
+            == frameName
+        then
+            table.remove(
+                UISpecialFrames,
+                index
+            )
+        end
+    end
+end
+
+function UI:RefreshEscapeCloseRegistration()
+    if not UISpecialFrames then
+        return
+    end
+
+    --------------------------------------------------
+    -- Remove existing registrations first.
+    --
+    -- This prevents duplicates when the setting is
+    -- toggled repeatedly.
+    --------------------------------------------------
+
+    for _, frameName in ipairs(
+        ESCAPE_FRAME_NAMES
+    ) do
+        removeSpecialFrame(
+            frameName
+        )
+    end
+
+    local enabled =
+        not AL.db
+        or not AL.db.settings
+        or AL.db.settings
+            .closeWindowsWithEscape
+            ~= false
+
+    if not enabled then
+        return
+    end
+
+    --------------------------------------------------
+    -- UISpecialFrames is WoW's normal mechanism for
+    -- windows that should close when ESC is pressed.
+    --------------------------------------------------
+
+    for _, frameName in ipairs(
+        ESCAPE_FRAME_NAMES
+    ) do
+        table.insert(
+            UISpecialFrames,
+            frameName
+        )
+    end
+end
+
 local function createWindow(
     globalName,
     titleText,
@@ -391,6 +469,8 @@ function UI:Create()
 
     self:CreateLootFrame()
     self:CreateSettingsFrame()
+
+    self:RefreshEscapeCloseRegistration()
 
     StaticPopupDialogs["ASCENSIONLOOT_CONFIRM_AWARD"] = {
         text = "Award %s to %s?",
@@ -2368,6 +2448,23 @@ function UI:CreateSettingsPanel(panel)
         end
     )
 
+    addCheckbox(
+        "Close Loot and Settings with ESC",
+        "closeWindowsWithEscape",
+        330,
+        -342,
+        "Allows the ESC key to close the main Loot and Settings windows.",
+        function()
+            if AL.UI
+                and AL.UI
+                    .RefreshEscapeCloseRegistration
+            then
+                AL.UI:
+                    RefreshEscapeCloseRegistration()
+            end
+        end
+    )
+
     --------------------------------------------------
     -- Roll duration
     --------------------------------------------------
@@ -2384,7 +2481,7 @@ function UI:CreateSettingsPanel(panel)
         panel,
         "TOPLEFT",
         335,
-        -350
+        -376
     )
 
     durationLabel:SetText(
@@ -2517,7 +2614,7 @@ function UI:CreateSettingsPanel(panel)
         panel,
         "TOPLEFT",
         20,
-        -385
+        -414
     )
 
     demo:SetScript(
@@ -2539,8 +2636,8 @@ function UI:CreateSettingsPanel(panel)
         "TOPLEFT",
         demo,
         "BOTTOMLEFT",
-        0,
-        -8
+        10,
+        0
     )
 
     clearDemo:SetScript(
@@ -2564,7 +2661,7 @@ function UI:CreateSettingsPanel(panel)
 
     resetLoot:SetPoint(
         "LEFT",
-        demo,
+        clearDemo,
         "RIGHT",
         10,
         0
@@ -2785,13 +2882,17 @@ function UI:ToggleLoot()
     end
 end
 
-function UI:ToggleSettings()
+function UI:ToggleSettings(
+    tabName
+)
     self:Create()
 
     if self.settingsFrame:IsShown() then
         self.settingsFrame:Hide()
     else
-        self:ShowSettings()
+        self:ShowSettings(
+            tabName
+        )
     end
 end
 

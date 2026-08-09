@@ -406,14 +406,14 @@ function MinimapButton:CreateButton()
             )
 
             GameTooltip:AddLine(
-                "Left click: Open loot window",
+                "Left click: Toggle loot window",
                 1,
                 1,
                 1
             )
 
             GameTooltip:AddLine(
-                "Right click: Open SR import",
+                "Right click: Toggle SR import",
                 1,
                 1,
                 1
@@ -455,14 +455,14 @@ function MinimapButton:CreateButton()
                 == "LeftButton"
             then
                 if AL.UI then
-                    AL.UI:ShowLoot()
+                    AL.UI:ToggleLoot()
                 end
 
             elseif mouseButton
                 == "RightButton"
             then
                 if AL.UI then
-                    AL.UI:ShowSettings(
+                    AL.UI:ToggleSettings(
                         "import"
                     )
                 end
