@@ -85,6 +85,61 @@ function Session:AddCollected(item, holderName)
     return entry
 end
 
+--------------------------------------------------
+-- Add physical copies individually
+--------------------------------------------------
+
+function Session:AddCollectedCopies(
+    item,
+    holderName,
+    copyCount
+)
+    if not item then
+        return {}
+    end
+
+    local count =
+        tonumber(copyCount)
+        or tonumber(item.quantity)
+        or 1
+
+    count =
+        math.max(
+            1,
+            math.floor(count)
+        )
+
+    local result = {}
+
+    for copyIndex = 1, count do
+        local copy =
+            AL:ShallowCopy(item)
+
+        --------------------------------------------------
+        -- Every physical item gets its own session
+        -- entry, even when the game reports several
+        -- copies together.
+        --------------------------------------------------
+
+        copy.quantity = 1
+
+        local entry =
+            self:AddCollected(
+                copy,
+                holderName
+            )
+
+        if entry then
+            table.insert(
+                result,
+                entry
+            )
+        end
+    end
+
+    return result
+end
+
 function Session:GetUnassignedCopies(
     itemID,
     holderName

@@ -9,7 +9,31 @@ BagHooks.bagSnapshot = {}
 BagHooks.scanPending = false
 BagHooks.scanAt = 0
 
-local BAG_SCAN_DELAY = 0.50
+--------------------------------------------------
+-- Master Loot items expected to enter our bags.
+--
+-- These are registered before GiveMasterLoot()
+-- happens and consumed when the bag-count delta
+-- confirms that the item physically arrived.
+--------------------------------------------------
+
+BagHooks.masterLootExpectations =
+    BagHooks.masterLootExpectations or {}
+
+--------------------------------------------------
+-- Positive bag deltas whose temporary trade
+-- tooltip was not ready on the first scan.
+--------------------------------------------------
+
+BagHooks.retryUntil =
+    BagHooks.retryUntil or {}
+
+local BAG_SCAN_DELAY = 0.75
+local BAG_RETRY_DELAY = 0.75
+local BAG_RETRY_WINDOW = 5.0
+
+local MASTER_LOOT_EXPECTATION_WINDOW =
+    8.0
 
 local function bagSlotKey(
     bag,
@@ -123,7 +147,7 @@ function BagHooks:GetCurrentBagCount(itemID)
 end
 
 --------------------------------------------------
--- Automatic Group Loot registration
+-- Automatic loot reconciliation
 --------------------------------------------------
 
 function BagHooks:ShouldAutomaticallyRegister()
@@ -139,9 +163,6 @@ function BagHooks:ShouldAutomaticallyRegister()
         return false
     end
 
-    -- Automatic bag registration is intended for
-    -- group content. Alt-click remains available
-    -- as a fallback while solo.
     if not AL:IsInRaid()
         and not AL:IsInParty()
     then
@@ -149,11 +170,17 @@ function BagHooks:ShouldAutomaticallyRegister()
     end
 
     local lootMethod =
-        GetLootMethod and GetLootMethod()
+        GetLootMethod
+        and GetLootMethod()
 
-    -- Master Loot already registers collected items
-    -- through LootManager:OnSlotCleared(). Registering
-    -- them here as well would create duplicates.
+    --------------------------------------------------
+    -- Unsolicited automatic registration is for
+    -- Group Loot / non-Master-Loot modes.
+    --
+    -- Master Loot is handled by explicit expectations
+    -- created by LootManager before GiveMasterLoot().
+    --------------------------------------------------
+
     if lootMethod == "master" then
         return false
     end
@@ -161,185 +188,327 @@ function BagHooks:ShouldAutomaticallyRegister()
     return true
 end
 
-function BagHooks:GetNewTradeableLocations(
-    currentBucket,
-    previousBucket
+--------------------------------------------------
+-- Master Loot expectations
+--------------------------------------------------
+
+function BagHooks:ExpectMasterLoot(
+    item,
+    copyCount
 )
-    local result = {}
-    local previousQuantities = {}
+    if not item
+        or not item.id
+    then
+        return false
+    end
 
-    for _, location in ipairs(
-        previousBucket
-        and previousBucket.slots
-        or {}
-    ) do
-        local key =
-            bagSlotKey(
-                location.bag,
-                location.slot
+    local key =
+        tostring(
+            item.id
+        )
+
+    local count =
+        tonumber(copyCount)
+        or tonumber(item.quantity)
+        or 1
+
+    count =
+        math.max(
+            1,
+            math.floor(count)
+        )
+
+    local expectation =
+        self.masterLootExpectations[
+            key
+        ]
+
+    if not expectation then
+        expectation = {
+            item =
+                AL:ShallowCopy(
+                    item
+                ),
+
+            count = 0,
+            expiresAt = 0,
+        }
+
+        self.masterLootExpectations[
+            key
+        ] =
+            expectation
+    end
+
+    expectation.count =
+        (
+            tonumber(
+                expectation.count
+            ) or 0
+        )
+        + count
+
+    expectation.expiresAt =
+        GetTime()
+        + MASTER_LOOT_EXPECTATION_WINDOW
+
+    --------------------------------------------------
+    -- Do not rely exclusively on BAG_UPDATE.
+    -- Schedule a reconciliation as a fallback.
+    --------------------------------------------------
+
+    self.scanPending = true
+    self.scanAt =
+        GetTime()
+        + BAG_SCAN_DELAY
+
+    return true
+end
+
+function BagHooks:GetExpectedMasterLootCount(
+    itemID
+)
+    local key =
+        tostring(
+            itemID
+        )
+
+    local expectation =
+        self.masterLootExpectations[
+            key
+        ]
+
+    if not expectation then
+        return 0
+    end
+
+    if GetTime()
+        >= (
+            expectation.expiresAt
+            or 0
+        )
+    then
+        self.masterLootExpectations[
+            key
+        ] =
+            nil
+
+        return 0
+    end
+
+    return tonumber(
+        expectation.count
+    ) or 0
+end
+
+function BagHooks:ConsumeMasterLootExpectation(
+    itemID,
+    count
+)
+    local key =
+        tostring(
+            itemID
+        )
+
+    local expectation =
+        self.masterLootExpectations[
+            key
+        ]
+
+    if not expectation then
+        return
+    end
+
+    expectation.count =
+        math.max(
+            0,
+            (
+                tonumber(
+                    expectation.count
+                ) or 0
             )
+            - (
+                tonumber(count)
+                or 0
+            )
+        )
 
-        previousQuantities[key] =
-            tonumber(location.quantity)
-            or 1
+    if expectation.count <= 0 then
+        self.masterLootExpectations[
+            key
+        ] =
+            nil
+    end
+end
+
+--------------------------------------------------
+-- Bag-location helpers
+--------------------------------------------------
+
+function BagHooks:GetRepresentativeItem(
+    bucket
+)
+    if not bucket then
+        return nil
     end
 
     for _, location in ipairs(
-        currentBucket
-        and currentBucket.slots
-        or {}
+        bucket.slots or {}
     ) do
-        local key =
-            bagSlotKey(
-                location.bag,
-                location.slot
-            )
+        local item =
+            AL.ItemUtils:
+                FromBagSlot(
+                    location.bag,
+                    location.slot
+                )
 
-        local previousQuantity =
-            previousQuantities[key]
-            or 0
+        if item then
+            return item
+        end
+    end
 
-        local currentQuantity =
-            tonumber(location.quantity)
-            or 1
+    return nil
+end
 
-        local addedCopies =
-            currentQuantity
-            - previousQuantity
+function BagHooks:FindUsableLocation(
+    bucket,
+    requireTradeable
+)
+    if not bucket then
+        return nil
+    end
 
-        if addedCopies > 0
-            and AL.ItemUtils:
+    for _, location in ipairs(
+        bucket.slots or {}
+    ) do
+        local tradeable =
+            AL.ItemUtils:
                 IsBagItemTradeable(
                     location.bag,
                     location.slot
                 )
+
+        if not requireTradeable
+            or tradeable
         then
-            table.insert(
-                result,
-                {
-                    bag = location.bag,
-                    slot = location.slot,
-                    link = location.link,
-                    addedCopies =
-                        addedCopies,
-                }
-            )
+            local item =
+                AL.ItemUtils:
+                    FromBagSlot(
+                        location.bag,
+                        location.slot
+                    )
+
+            if item then
+                return item,
+                    location,
+                    tradeable
+            end
         end
     end
 
-    return result
+    return nil
 end
 
-function BagHooks:RegisterNewCopies(
-    currentBucket,
-    previousBucket,
-    newCopyCount
-)
-    local tradeableLocations =
-        self:GetNewTradeableLocations(
-            currentBucket,
-            previousBucket
-        )
+--------------------------------------------------
+-- Session registration
+--------------------------------------------------
 
-    if #tradeableLocations == 0 then
+function BagHooks:RegisterCopiesFromBucket(
+    bucket,
+    copyCount,
+    registrationSource,
+    requireTradeable
+)
+    local count =
+        tonumber(copyCount)
+        or 0
+
+    if count <= 0 then
+        return 0
+    end
+
+    local item,
+        location,
+        tradeable =
+            self:FindUsableLocation(
+                bucket,
+                requireTradeable
+            )
+
+    if not item
+        or not location
+    then
+        return 0
+    end
+
+    --------------------------------------------------
+    -- Group Loot still obeys the normal tracking
+    -- quality rules.
+    --
+    -- Master Loot expectations were already filtered
+    -- when LootManager built its collection queue.
+    --------------------------------------------------
+
+    if registrationSource
+        == "bag_update"
+        and not AL.ItemUtils:
+            ShouldTrack(item)
+    then
         return 0
     end
 
     local holder =
         UnitName("player")
 
-    local remaining =
-        tonumber(newCopyCount)
-        or 0
-
     local added = 0
-    local displayLink = nil
 
-    for _, location in ipairs(
-        tradeableLocations
-    ) do
-        if remaining <= 0 then
-            break
-        end
-
-        local item =
-            AL.ItemUtils:FromBagSlot(
-                location.bag,
-                location.slot
+    for copyIndex = 1, count do
+        local copy =
+            AL:ShallowCopy(
+                item
             )
 
-        if item
-            and AL.ItemUtils:
-                ShouldTrack(item)
-        then
-            local copiesHere =
-                math.min(
-                    tonumber(
-                        location.addedCopies
-                    ) or 1,
-                    remaining
+        copy.quantity = 1
+        copy.source = "bag"
+
+        copy.registrationSource =
+            registrationSource
+
+        copy.bag =
+            location.bag
+
+        copy.bagSlot =
+            location.slot
+
+        copy.tradeableVerified =
+            tradeable
+            and true
+            or false
+
+        if tradeable then
+            copy.tradeableVerifiedAt =
+                time()
+        end
+
+        local entry =
+            AL.LootSession:
+                AddCollected(
+                    copy,
+                    holder
                 )
 
-            for copyIndex = 1,
-                copiesHere
-            do
-                local copy =
-                    AL:ShallowCopy(item)
-
-                copy.quantity = 1
-                copy.source = "bag"
-
-                copy.registrationSource =
-                    "bag_update"
-
-                copy.tradeableVerified =
-                    true
-
-                copy.tradeableVerifiedAt =
-                    time()
-
-                copy.bag =
-                    location.bag
-
-                copy.bagSlot =
-                    location.slot
-
-                AL.LootSession:
-                    AddCollected(
-                        copy,
-                        holder
-                    )
-
-                added = added + 1
-                remaining = remaining - 1
-
-                displayLink =
-                    copy.link
-                    or copy.name
-            end
-        end
-    end
-
-    if added > 0 then
-        AL:Print(string.format(
-            "Added %d %s of %s "
-                .. "to the loot session.",
-            added,
-            added == 1
-                and "copy"
-                or "copies",
-            displayLink or "item"
-        ))
-
-        if AL.db.settings.autoShowLoot
-            and AL.UI
-        then
-            AL.UI:ShowLoot()
+        if entry then
+            added =
+                added + 1
         end
     end
 
     return added
 end
+
+--------------------------------------------------
+-- Reconciliation
+--------------------------------------------------
 
 function BagHooks:ScanForNewEligibleItems()
     local currentSnapshot =
@@ -353,40 +522,321 @@ function BagHooks:ScanForNewEligibleItems()
         return
     end
 
-    if self:ShouldAutomaticallyRegister() then
-        for key, currentBucket in pairs(
+    local previousSnapshot =
+        self.bagSnapshot
+        or {}
+
+    local nextSnapshot = {}
+
+    local now =
+        GetTime()
+
+    local needsRetry =
+        false
+
+    local totalAdded =
+        0
+
+    local firstDisplayLink =
+        nil
+
+    --------------------------------------------------
+    -- Process every item currently in the bags.
+    --------------------------------------------------
+
+    for key,
+        currentBucket in pairs(
             currentSnapshot
-        ) do
-            local previousBucket =
-                self.bagSnapshot[key]
+        )
+    do
+        local previousBucket =
+            previousSnapshot[
+                key
+            ]
 
-            local previousCount =
-                previousBucket
-                and previousBucket.count
-                or 0
+        local previousCount =
+            previousBucket
+            and tonumber(
+                previousBucket.count
+            )
+            or 0
 
-            local currentCount =
-                currentBucket.count or 0
+        local currentCount =
+            tonumber(
+                currentBucket.count
+            )
+            or 0
 
-            local difference =
-                currentCount
-                - previousCount
+        local difference =
+            currentCount
+            - previousCount
 
-            if difference > 0 then
-                self:RegisterNewCopies(
-                    currentBucket,
-                    previousBucket,
-                    difference
+        local unresolved =
+            0
+
+        if difference > 0 then
+            local remaining =
+                difference
+
+            --------------------------------------------------
+            -- 1. Explicit Master Loot expectations
+            --------------------------------------------------
+
+            local expectedMasterLoot =
+                self:
+                    GetExpectedMasterLootCount(
+                        currentBucket.itemID
+                    )
+
+            local expectedFromDelta =
+                math.min(
+                    remaining,
+                    expectedMasterLoot
+                )
+
+            if expectedFromDelta > 0 then
+                local added =
+                    self:
+                        RegisterCopiesFromBucket(
+                            currentBucket,
+                            expectedFromDelta,
+                            "master_loot_bag",
+                            false
+                        )
+
+                if added > 0 then
+                    self:
+                        ConsumeMasterLootExpectation(
+                            currentBucket.itemID,
+                            added
+                        )
+
+                    totalAdded =
+                        totalAdded
+                        + added
+
+                    local representative =
+                        self:
+                            GetRepresentativeItem(
+                                currentBucket
+                            )
+
+                    if representative
+                        and not firstDisplayLink
+                    then
+                        firstDisplayLink =
+                            representative.link
+                            or representative.name
+                    end
+                end
+
+                if added
+                    < expectedFromDelta
+                then
+                    unresolved =
+                        unresolved
+                        + (
+                            expectedFromDelta
+                            - added
+                        )
+                end
+
+                remaining =
+                    remaining
+                    - expectedFromDelta
+            end
+
+            --------------------------------------------------
+            -- 2. Group Loot / non-Master-Loot additions
+            --------------------------------------------------
+
+            if remaining > 0
+                and self:
+                    ShouldAutomaticallyRegister()
+            then
+                local representative =
+                    self:
+                        GetRepresentativeItem(
+                            currentBucket
+                        )
+
+                if representative
+                    and AL.ItemUtils:
+                        ShouldTrack(
+                            representative
+                        )
+                then
+                    local added =
+                        self:
+                            RegisterCopiesFromBucket(
+                                currentBucket,
+                                remaining,
+                                "bag_update",
+                                true
+                            )
+
+                    if added > 0 then
+                        totalAdded =
+                            totalAdded
+                            + added
+
+                        firstDisplayLink =
+                            firstDisplayLink
+                            or representative.link
+                            or representative.name
+                    end
+
+                    --------------------------------------------------
+                    -- If the temporary raid-trade tooltip is
+                    -- late, don't permanently advance the
+                    -- baseline yet.
+                    --------------------------------------------------
+
+                    if added
+                        < remaining
+                    then
+                        unresolved =
+                            unresolved
+                            + (
+                                remaining
+                                - added
+                            )
+                    end
+                end
+            end
+        end
+
+        --------------------------------------------------
+        -- Retry unresolved tracked deltas for a few
+        -- seconds. This is important because Ascension's
+        -- tooltip data can appear after BAG_UPDATE.
+        --------------------------------------------------
+
+        if unresolved > 0 then
+            local retryDeadline =
+                self.retryUntil[
+                    key
+                ]
+
+            if not retryDeadline then
+                retryDeadline =
+                    now
+                    + BAG_RETRY_WINDOW
+
+                self.retryUntil[
+                    key
+                ] =
+                    retryDeadline
+            end
+
+            if now < retryDeadline then
+                needsRetry =
+                    true
+
+                nextSnapshot[
+                    key
+                ] = {
+                    itemID =
+                        currentBucket.itemID,
+
+                    count =
+                        math.max(
+                            0,
+                            currentCount
+                            - unresolved
+                        ),
+
+                    slots =
+                        currentBucket.slots,
+                }
+
+            else
+                --------------------------------------------------
+                -- Stop retrying this delta. From this point the
+                -- current bag state becomes the new baseline.
+                --------------------------------------------------
+
+                self.retryUntil[
+                    key
+                ] =
+                    nil
+
+                nextSnapshot[
+                    key
+                ] =
+                    currentBucket
+
+                AL:Print(
+                    "Could not verify a newly received "
+                    .. tostring(
+                        firstDisplayLink
+                        or (
+                            "item #"
+                            .. tostring(
+                                currentBucket.itemID
+                            )
+                        )
+                    )
+                    .. " before the tracking retry expired.",
+                    1,
+                    0.5,
+                    0.2
                 )
             end
+        else
+            self.retryUntil[
+                key
+            ] =
+                nil
+
+            nextSnapshot[
+                key
+            ] =
+                currentBucket
         end
     end
 
-    -- Always update the baseline, including while
-    -- Master Loot is active. This prevents old changes
-    -- being detected later after changing loot method.
+    --------------------------------------------------
+    -- Items that disappeared from the bags simply
+    -- disappear from the new baseline.
+    --------------------------------------------------
+
     self.bagSnapshot =
-        currentSnapshot
+        nextSnapshot
+
+    --------------------------------------------------
+    -- Automatically retry without requiring another
+    -- BAG_UPDATE event.
+    --------------------------------------------------
+
+    if needsRetry then
+        self.scanPending =
+            true
+
+        self.scanAt =
+            GetTime()
+            + BAG_RETRY_DELAY
+    end
+
+    --------------------------------------------------
+    -- Notify once for the complete reconciliation.
+    --------------------------------------------------
+
+    if totalAdded > 0 then
+        AL:Print(string.format(
+            "Added %d newly collected %s to the loot session.",
+            totalAdded,
+            totalAdded == 1
+                and "item"
+                or "items"
+        ))
+
+        if AL.db.settings.autoShowLoot
+            and AL.UI
+        then
+            AL.UI:ShowLoot()
+        end
+    end
 end
 
 function BagHooks:OnBagUpdate()
@@ -394,11 +844,17 @@ function BagHooks:OnBagUpdate()
         return
     end
 
-    -- BAG_UPDATE can fire several times for one loot
-    -- operation. Debouncing waits until the bags settle.
-    self.scanPending = true
+    --------------------------------------------------
+    -- BAG_UPDATE frequently fires several times during
+    -- one loot operation. Wait for the bags to settle.
+    --------------------------------------------------
+
+    self.scanPending =
+        true
+
     self.scanAt =
-        GetTime() + BAG_SCAN_DELAY
+        GetTime()
+        + BAG_SCAN_DELAY
 end
 
 function BagHooks:OnUpdate()
@@ -406,17 +862,18 @@ function BagHooks:OnUpdate()
         return
     end
 
-    if GetTime() < self.scanAt then
+    if GetTime()
+        < self.scanAt
+    then
         return
     end
 
-    self.scanPending = false
-    self:ScanForNewEligibleItems()
-end
+    self.scanPending =
+        false
 
---------------------------------------------------
--- Alt-click registration fallback
---------------------------------------------------
+    self:
+        ScanForNewEligibleItems()
+end
 
 function BagHooks:EnsureBagItemRegistered(
     item
