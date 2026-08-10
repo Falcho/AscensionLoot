@@ -541,6 +541,83 @@ function Trade:StartVerificationTimer()
     self.verifyFrame:Show()
 end
 
+--------------------------------------------------
+-- Continue automatic trade queue
+--------------------------------------------------
+
+function Trade:ScheduleNextTrade()
+    if not AL.db
+        or not AL.db.settings
+        or not AL.db.settings
+            .autoOpenTrade
+    then
+        return
+    end
+
+    --------------------------------------------------
+    -- Reuse one tiny frame rather than creating a new
+    -- frame after every completed trade.
+    --------------------------------------------------
+
+    if not self.nextTradeFrame then
+        local frame =
+            CreateFrame("Frame")
+
+        frame:Hide()
+
+        frame:SetScript(
+            "OnUpdate",
+            function(self, elapsed)
+                self.elapsed =
+                    (self.elapsed or 0)
+                    + elapsed
+
+                --------------------------------------------------
+                -- Give the client a short moment to completely
+                -- close the previous trade before requesting
+                -- the next one.
+                --------------------------------------------------
+
+                if self.elapsed < 0.75 then
+                    return
+                end
+
+                self.elapsed = 0
+                self:Hide()
+
+                if not AL.db
+                    or not AL.db.settings
+                    or not AL.db.settings
+                        .autoOpenTrade
+                then
+                    return
+                end
+
+                --------------------------------------------------
+                -- There may be no further winner, which is fine.
+                --------------------------------------------------
+
+                local nextEntry =
+                    Trade:
+                        GetNextPendingEntry()
+
+                if nextEntry then
+                    Trade:
+                        TryStart(
+                            nextEntry
+                        )
+                end
+            end
+        )
+
+        self.nextTradeFrame =
+            frame
+    end
+
+    self.nextTradeFrame.elapsed = 0
+    self.nextTradeFrame:Show()
+end
+
 function Trade:OnTradeClosed()
     self.tradeOpen = false
 
@@ -601,6 +678,18 @@ function Trade:VerifyClosedTrade()
         end
     end
 
+    --------------------------------------------------
+    -- Remember whether this trade actually completed
+    -- before resetting transient state.
+    --------------------------------------------------
+
+    local shouldContinue =
+        tradeCompleted
+        and AL.db
+        and AL.db.settings
+        and AL.db.settings
+            .autoOpenTrade
+
     self.tradeCompleted = false
     self.requestedEntry = nil
     self.requestedWinner = nil
@@ -608,6 +697,18 @@ function Trade:VerifyClosedTrade()
 
     if AL.UI then
         AL.UI:RefreshAll()
+    end
+
+    --------------------------------------------------
+    -- A successfully completed trade advances to the
+    -- next winner automatically.
+    --
+    -- Cancelled/declined trades deliberately do NOT
+    -- auto-reopen and harass the same player.
+    --------------------------------------------------
+
+    if shouldContinue then
+        self:ScheduleNextTrade()
     end
 end
 

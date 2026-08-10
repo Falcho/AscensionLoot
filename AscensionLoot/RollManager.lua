@@ -108,19 +108,32 @@ local function sameTieValue(left, right)
         and left.tieRoll == right.tieRoll
 end
 
-function Roll:GetAvailableCopyCount(item)
+function Roll:GetAvailableCopyCount(
+    item
+)
     if not item then
         return 1
     end
 
+    --------------------------------------------------
+    -- Persistent tracked copies are authoritative.
+    --
+    -- Example:
+    --   2 identical raid drops
+    --   = 2 LootSession entries
+    --   = one roll with 2 winners.
+    --------------------------------------------------
+
     if AL.LootSession
-        and AL.LootSession.GetUnassignedCopies
+        and AL.LootSession
+            .GetUnassignedCopies
     then
         local copies =
-            AL.LootSession:GetUnassignedCopies(
-                item.id,
-                UnitName("player")
-            )
+            AL.LootSession:
+                GetUnassignedCopies(
+                    item.id,
+                    UnitName("player")
+                )
 
         if #copies > 0 then
             return #copies
@@ -128,12 +141,24 @@ function Roll:GetAvailableCopyCount(item)
     end
 
     --------------------------------------------------
-    -- Without persistent physical session copies,
-    -- this represents one roll unit.
+    -- A live corpse loot slot can legitimately contain
+    -- more than one physical copy.
+    --------------------------------------------------
+
+    if item.source == "loot" then
+        return math.max(
+            1,
+            tonumber(
+                item.quantity
+            ) or 1
+        )
+    end
+
+    --------------------------------------------------
+    -- Bag stack quantity is NOT winner count.
     --
-    -- item.quantity may be the stack size of a bag
-    -- item or loot slot and must not be interpreted
-    -- as the number of independent winners.
+    -- Alt-clicking a stack of crafting materials
+    -- manually starts one roll with one winner.
     --------------------------------------------------
 
     return 1
