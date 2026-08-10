@@ -145,6 +145,58 @@ function TT:AddReward(
     end
 
     --------------------------------------------------
+    -- A physical tier piece may belong to exactly
+    -- one token.
+    --
+    -- Never silently overwrite an existing mapping.
+    --------------------------------------------------
+
+    local existingTokenID =
+        self.pieceToToken[
+            pieceID
+        ]
+
+    if existingTokenID
+        and tonumber(existingTokenID)
+            ~= tokenID
+    then
+        local existingToken =
+            self.tokens[
+                existingTokenID
+            ]
+
+        AL:Print(
+            string.format(
+                "Tier mapping conflict: item %d already "
+                    .. "maps to token %d (%s %s %s), "
+                    .. "cannot also map to token %d.",
+                pieceID,
+                existingTokenID,
+                existingToken
+                    and tostring(
+                        existingToken.tier
+                    )
+                    or "?",
+                existingToken
+                    and tostring(
+                        existingToken.difficulty
+                    )
+                    or "?",
+                existingToken
+                    and tostring(
+                        existingToken.slot
+                    )
+                    or "?",
+                tokenID
+            ),
+            1,
+            0.3,
+            0.3
+        )
+
+        return false
+    end
+    --------------------------------------------------
     -- Prevent duplicate entries.
     --------------------------------------------------
 
@@ -245,6 +297,46 @@ function TT:GetRewards(
     return token
         and token.rewards
         or {}
+end
+
+function TT:GetMappingSummary()
+    local tokenCount = 0
+    local mappedTokenCount = 0
+    local rewardCount = 0
+
+    for _, token in pairs(
+        self.tokens
+    ) do
+        tokenCount =
+            tokenCount + 1
+
+        local rewards =
+            token.rewards or {}
+
+        if #rewards > 0 then
+            mappedTokenCount =
+                mappedTokenCount + 1
+        end
+
+        rewardCount =
+            rewardCount
+            + #rewards
+    end
+
+    return {
+        tokens =
+            tokenCount,
+
+        mappedTokens =
+            mappedTokenCount,
+
+        unmappedTokens =
+            tokenCount
+            - mappedTokenCount,
+
+        rewards =
+            rewardCount,
+    }
 end
 
 --------------------------------------------------
