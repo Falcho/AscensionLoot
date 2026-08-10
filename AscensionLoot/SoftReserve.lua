@@ -486,6 +486,188 @@ function SR:GetReservers(itemID)
     return item and item.reservers or {}
 end
 
+--------------------------------------------------
+-- Effective tier-token reserves
+--------------------------------------------------
+
+function SR:GetEffectiveReservers(
+    itemID
+)
+    itemID =
+        tonumber(itemID)
+
+    if not itemID then
+        return {}
+    end
+
+    --------------------------------------------------
+    -- Result is keyed by player so direct token
+    -- reserves and tier-piece reserves can be merged.
+    --------------------------------------------------
+
+    local byPlayer = {}
+
+    local function addReserver(
+        reserver,
+        sourceItemID,
+        sourceType
+    )
+        if not reserver then
+            return
+        end
+
+        local normalized =
+            reserver.normalizedName
+            or AL:NormalizeName(
+                reserver.name
+            )
+
+        if not normalized then
+            return
+        end
+
+        local existing =
+            byPlayer[normalized]
+
+        if not existing then
+            existing = {
+                name =
+                    reserver.name,
+
+                normalizedName =
+                    normalized,
+
+                count = 0,
+
+                directCount = 0,
+                mappedCount = 0,
+
+                sources = {},
+            }
+
+            byPlayer[normalized] =
+                existing
+        end
+
+        local reserveCount =
+            math.max(
+                1,
+                tonumber(
+                    reserver.count
+                ) or 1
+            )
+
+        existing.count =
+            existing.count
+            + reserveCount
+
+        if sourceType
+            == "direct"
+        then
+            existing.directCount =
+                existing.directCount
+                + reserveCount
+        else
+            existing.mappedCount =
+                existing.mappedCount
+                + reserveCount
+        end
+
+        table.insert(
+            existing.sources,
+            {
+                itemID =
+                    tonumber(
+                        sourceItemID
+                    ),
+
+                type =
+                    sourceType,
+
+                count =
+                    reserveCount,
+            }
+        )
+    end
+
+    --------------------------------------------------
+    -- 1. Direct reserve on the token/item itself.
+    --------------------------------------------------
+
+    for _, reserver in ipairs(
+        self:GetReservers(
+            itemID
+        )
+    ) do
+        addReserver(
+            reserver,
+            itemID,
+            "direct"
+        )
+    end
+
+    --------------------------------------------------
+    -- 2. If this item is a tier token, every reserve
+    --    on one of the tier pieces redeemable from
+    --    this exact token is also an effective SR.
+    --------------------------------------------------
+
+    if AL.TierTokens
+        and AL.TierTokens:IsToken(
+            itemID
+        )
+    then
+        for _, pieceID in ipairs(
+            AL.TierTokens:
+                GetRewards(
+                    itemID
+                )
+        ) do
+            for _, reserver in ipairs(
+                self:GetReservers(
+                    pieceID
+                )
+            ) do
+                addReserver(
+                    reserver,
+                    pieceID,
+                    "tier_piece"
+                )
+            end
+        end
+    end
+
+    --------------------------------------------------
+    -- Convert keyed table back into the same style of
+    -- array returned by GetReservers().
+    --------------------------------------------------
+
+    local result = {}
+
+    for _, reserver in pairs(
+        byPlayer
+    ) do
+        table.insert(
+            result,
+            reserver
+        )
+    end
+
+    table.sort(
+        result,
+        function(left, right)
+            return string.lower(
+                left.name or ""
+            )
+                < string.lower(
+                    right.name or ""
+                )
+        end
+    )
+
+    return result
+end
+
 function SR:IsReserved(itemID)
     return self:GetItem(itemID)
         ~= nil

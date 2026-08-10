@@ -168,8 +168,26 @@ function Roll:BuildReserveMap(itemID)
     local result = {}
     local resolutions = {}
 
+    local reservers
+
+    if AL.SoftReserve
+        .GetEffectiveReservers
+    then
+        reservers =
+            AL.SoftReserve:
+                GetEffectiveReservers(
+                    itemID
+                )
+    else
+        reservers =
+            AL.SoftReserve:
+                GetReservers(
+                    itemID
+                )
+    end
+
     for _, reserver in ipairs(
-        AL.SoftReserve:GetReservers(itemID)
+        reservers
     ) do
         local resolvedName,
             matchType,
