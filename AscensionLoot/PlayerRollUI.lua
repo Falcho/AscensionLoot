@@ -74,6 +74,99 @@ local function getRemote()
         or nil
 end
 
+local function samePlayer(
+    left,
+    right
+)
+    if not left
+        or not right
+    then
+        return false
+    end
+
+    return AL:NormalizeName(
+        left
+    )
+        == AL:NormalizeName(
+            right
+        )
+end
+
+function PlayerUI:HasLocalNormalRoll(
+    remote
+)
+    if not remote then
+        return false
+    end
+
+    local playerName =
+        UnitName("player")
+
+    for _, roll in ipairs(
+        remote.rolls or {}
+    ) do
+        if samePlayer(
+            roll.playerName,
+            playerName
+        )
+        then
+            return true
+        end
+    end
+
+    return false
+end
+
+function PlayerUI:IsLocalTieCandidate(
+    remote
+)
+    if not remote
+        or remote.state ~= "tie"
+    then
+        return false
+    end
+
+    local normalized =
+        AL:NormalizeName(
+            UnitName("player")
+        )
+
+    if not normalized then
+        return false
+    end
+
+    return remote.tieCandidates
+        and remote.tieCandidates[
+            normalized
+        ] ~= nil
+        or false
+end
+
+function PlayerUI:HasLocalTieRoll(
+    remote
+)
+    if not remote then
+        return false
+    end
+
+    local playerName =
+        UnitName("player")
+
+    for _, roll in ipairs(
+        remote.tieRolls or {}
+    ) do
+        if samePlayer(
+            roll.playerName,
+            playerName
+        )
+        then
+            return true
+        end
+    end
+
+    return false
+end
+
 --------------------------------------------------
 -- Group eligibility
 --------------------------------------------------
@@ -133,6 +226,43 @@ function PlayerUI:RefreshGroupVisibility()
         and remote.state ~= "tie"
     then
         return
+    end
+
+        --------------------------------------------------
+    -- An accepted ordinary roll stays dismissed.
+    --------------------------------------------------
+
+    if remote.state == "rolling"
+        and self:
+            HasLocalNormalRoll(
+                remote
+            )
+    then
+        self.frame:Hide()
+        return
+    end
+
+    --------------------------------------------------
+    -- During a tie, only an eligible player who has
+    -- not yet completed the tie-break may see it.
+    --------------------------------------------------
+
+    if remote.state == "tie" then
+        if self:
+            HasLocalTieRoll(
+                remote
+            )
+            or not self:
+                IsLocalTieCandidate(
+                    remote
+                )
+        then
+            self.frame:Hide()
+            return
+        end
+
+        self.dismissedRollID =
+            nil
     end
 
     --------------------------------------------------
@@ -836,8 +966,7 @@ function PlayerUI:OnSyncChanged(
             remote.id
 
         --------------------------------------------------
-        -- A new roll clears Pass / close-X dismissal
-        -- from the previous roll.
+        -- Every genuinely new roll gets a fresh window.
         --------------------------------------------------
 
         self.dismissedRollID =
@@ -854,15 +983,11 @@ function PlayerUI:OnSyncChanged(
     end
 
     --------------------------------------------------
-    -- Keep internal state refreshed even if this group
-    -- type is configured not to display the window.
+    -- Always keep the contents current, even when the
+    -- frame itself should remain hidden.
     --------------------------------------------------
 
     self:Refresh()
-
-    --------------------------------------------------
-    -- Never display outside an eligible group.
-    --------------------------------------------------
 
     if not self:CanDisplay() then
         if self.frame then
@@ -873,14 +998,95 @@ function PlayerUI:OnSyncChanged(
     end
 
     --------------------------------------------------
-    -- Pass or close-X dismisses only this roll.
-    -- Later updates belonging to the same roll must
-    -- not reopen the frame.
+    -- Ordinary roll accepted:
+    --
+    -- once the authority broadcasts our accepted roll
+    -- back to us, our job is done and the compact
+    -- window closes.
+    --------------------------------------------------
+
+    if remote.state == "rolling"
+        and self:
+            HasLocalNormalRoll(
+                remote
+            )
+    then
+        self.dismissedRollID =
+            remote.id
+
+        if self.frame then
+            self.frame:Hide()
+        end
+
+        return
+    end
+
+    --------------------------------------------------
+    -- Tie phase.
+    --------------------------------------------------
+
+    if remote.state == "tie" then
+        --------------------------------------------------
+        -- Our tie-break was accepted: close again.
+        --------------------------------------------------
+
+        if self:
+            HasLocalTieRoll(
+                remote
+            )
+        then
+            self.dismissedRollID =
+                remote.id
+
+            if self.frame then
+                self.frame:Hide()
+            end
+
+            return
+        end
+
+        --------------------------------------------------
+        -- Only actual tie candidates get the window back.
+        --------------------------------------------------
+
+        if self:
+            IsLocalTieCandidate(
+                remote
+            )
+        then
+            self.dismissedRollID =
+                nil
+
+            if self.frame then
+                self.frame:Show()
+            end
+
+            return
+        end
+
+        --------------------------------------------------
+        -- Everyone else stays out of the tie.
+        --------------------------------------------------
+
+        if self.frame then
+            self.frame:Hide()
+        end
+
+        return
+    end
+
+    --------------------------------------------------
+    -- Pass / close-X / accepted-roll dismissal should
+    -- not be undone by later updates from the same roll.
     --------------------------------------------------
 
     if self.dismissedRollID
         == remote.id
     then
+        if self.frame then
+            self.frame:Hide()
+        end
+
         return
     end
 

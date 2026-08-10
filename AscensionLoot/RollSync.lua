@@ -350,12 +350,57 @@ function Sync:BroadcastTie(
         return
     end
 
+    --------------------------------------------------
+    -- First announce that the tie phase has begun.
+    --------------------------------------------------
+
     self:Send(
         "T",
         active.syncID,
         duration or 0,
         expectedMaximum or 100
     )
+
+    --------------------------------------------------
+    -- Then send one small eligibility packet for each
+    -- tied player.
+    --
+    -- Sending players separately avoids exceeding the
+    -- addon-message size limit when several players tie.
+    --------------------------------------------------
+
+    local names = {}
+
+    local candidates =
+        active.tie
+        and active.tie.candidates
+        or {}
+
+    for normalizedName,
+        entry in pairs(
+            candidates
+        )
+    do
+        table.insert(
+            names,
+            entry.name
+                or normalizedName
+        )
+    end
+
+    table.sort(
+        names
+    )
+
+    for _, playerName in ipairs(
+        names
+    ) do
+        self:Send(
+            "E",
+            active.syncID,
+            playerName
+        )
+    end
 end
 
 --------------------------------------------------
@@ -564,6 +609,25 @@ function Sync:OnAddonMessage(
             return
         end
 
+        --------------------------------------------------
+        -- A raid member cannot create a legitimate
+        -- synchronized roll unless they are leader
+        -- or assistant.
+        --------------------------------------------------
+
+        if AL.IsRollAuthority
+            and not AL:IsRollAuthority(
+                sender
+            )
+        then
+            self:Debug(
+                "Rejected START from unauthorized "
+                .. tostring(sender)
+            )
+
+            return
+        end
+
         self.remote = {
             id =
                 rollID,
@@ -604,6 +668,10 @@ function Sync:OnAddonMessage(
 
             tieRolls =
                 {},
+
+            tieCandidates =
+                {},
+
 
             seenSequences =
                 {},
@@ -784,12 +852,59 @@ function Sync:OnAddonMessage(
         remote.tieRolls =
             {}
 
+        remote.tieCandidates =
+            {}
+
         self:Debug(
             string.format(
                 "TIE started: /roll %d, "
                 .. "%d seconds.",
                 expectedMaximum,
                 duration
+            )
+        )
+
+        self:NotifyChanged()
+
+        return
+    end
+
+    --------------------------------------------------
+    -- TIE ELIGIBILITY
+    --------------------------------------------------
+
+    if messageType == "E" then
+        local playerName =
+            fields[3]
+
+        if not playerName
+            or playerName == ""
+        then
+            return
+        end
+
+        remote.tieCandidates =
+            remote.tieCandidates
+            or {}
+
+        local normalized =
+            AL:NormalizeName(
+                playerName
+            )
+
+        if not normalized then
+            return
+        end
+
+        remote.tieCandidates[
+            normalized
+        ] =
+            playerName
+
+        self:Debug(
+            "TIE ELIGIBLE: "
+            .. tostring(
+                playerName
             )
         )
 

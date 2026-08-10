@@ -402,6 +402,85 @@ function AL:CanSendRaidWarning()
     return isLeader or isAssistant
 end
 
+--------------------------------------------------
+-- Roll authority
+--------------------------------------------------
+
+function AL:GetRaidMemberRank(
+    playerName
+)
+    if not self:IsInRaid() then
+        return nil
+    end
+
+    local wanted =
+        self:NormalizeName(
+            playerName
+        )
+
+    if not wanted then
+        return nil
+    end
+
+    for index = 1,
+        GetNumRaidMembers()
+    do
+        local raidName,
+            rank =
+                GetRaidRosterInfo(
+                    index
+                )
+
+        if raidName
+            and self:NormalizeName(
+                raidName
+            ) == wanted
+        then
+            return tonumber(rank)
+                or 0
+        end
+    end
+
+    return nil
+end
+
+function AL:IsRollAuthority(
+    playerName
+)
+    --------------------------------------------------
+    -- The officer restriction applies to raids.
+    --
+    -- Solo and party rolls remain available so the
+    -- addon can still be used and tested outside raids.
+    --------------------------------------------------
+
+    if not self:IsInRaid() then
+        return true
+    end
+
+    local rank =
+        self:GetRaidMemberRank(
+            playerName
+        )
+
+    --------------------------------------------------
+    -- Raid roster ranks:
+    --
+    -- 0 = member
+    -- 1 = assistant
+    -- 2 = leader
+    --------------------------------------------------
+
+    return rank ~= nil
+        and rank >= 1
+end
+
+function AL:CanInitializeRoll()
+    return self:IsRollAuthority(
+        UnitName("player")
+    )
+end
+
 function AL:SanitizeChatText(text)
     if type(text) ~= "string" then
         return ""

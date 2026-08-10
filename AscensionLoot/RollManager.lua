@@ -127,10 +127,16 @@ function Roll:GetAvailableCopyCount(item)
         end
     end
 
-    return math.max(
-        1,
-        tonumber(item.quantity) or 1
-    )
+    --------------------------------------------------
+    -- Without persistent physical session copies,
+    -- this represents one roll unit.
+    --
+    -- item.quantity may be the stack size of a bag
+    -- item or loot slot and must not be interpreted
+    -- as the number of independent winners.
+    --------------------------------------------------
+
+    return 1
 end
 
 function Roll:BuildReserveMap(itemID)
@@ -543,7 +549,25 @@ end
 
 function Roll:StartForItem(item)
     if not item then
-        return
+        return false
+    end
+
+    --------------------------------------------------
+    -- Only raid leadership may initialize a raid roll.
+    --------------------------------------------------
+
+    if AL.CanInitializeRoll
+        and not AL:CanInitializeRoll()
+    then
+        AL:Print(
+            "Only the raid leader or a raid assistant "
+            .. "can start an AscensionLoot roll.",
+            1,
+            0.3,
+            0.3
+        )
+
+        return false
     end
 
     item.key =
@@ -631,12 +655,16 @@ function Roll:StartForItem(item)
     if AL.UI then
         AL.UI:RefreshAll()
     end
+
+    return true
 end
 
 -- Kept so older UI code does not error.
 -- The OS button should be removed or hidden.
 function Roll:StartOffSpec(item)
-    self:StartForItem(item)
+    return self:StartForItem(
+        item
+    )
 end
 
 function Roll:HandleTieRoll(
