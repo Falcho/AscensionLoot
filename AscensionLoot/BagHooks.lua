@@ -601,7 +601,7 @@ function BagHooks:ScanForNewEligibleItems()
                             currentBucket,
                             expectedFromDelta,
                             "master_loot_bag",
-                            false
+                            true
                         )
 
                 if added > 0 then
@@ -956,6 +956,10 @@ function BagHooks:HandleModifiedClick(
     button,
     mouseButton
 )
+    --------------------------------------------------
+    -- Only Alt + Left Click is ours.
+    --------------------------------------------------
+
     if mouseButton ~= "LeftButton" then
         return
     end
@@ -964,42 +968,122 @@ function BagHooks:HandleModifiedClick(
         return
     end
 
-    local bag, slot =
-        self:GetBagAndSlot(button)
+    --------------------------------------------------
+    -- Resolve the clicked bag slot.
+    --------------------------------------------------
 
-    if bag == nil then
+    local bag,
+        slot =
+            self:GetBagAndSlot(
+                button
+            )
+
+    if bag == nil
+        or slot == nil
+    then
         return
     end
 
     local bagItem =
-        AL.ItemUtils:FromBagSlot(
-            bag,
-            slot
-        )
+        AL.ItemUtils:
+            FromBagSlot(
+                bag,
+                slot
+            )
 
     if not bagItem then
         return
     end
 
-    local targetItem = bagItem
+    --------------------------------------------------
+    -- IMPORTANT:
+    --
+    -- Rolling and persistent loot tracking are two
+    -- separate things.
+    --
+    -- Any bag item can be rolled.
+    --
+    -- Only raid-distributable items with an active
+    -- temporary raid-trade timer are persistently
+    -- registered.
+    --------------------------------------------------
 
-    -- Eligible items should be represented by a
-    -- persistent session entry before rolling.
-    if AL.ItemUtils:ShouldTrack(
+    local targetItem =
         bagItem
-    ) then
-        local errorMessage
 
-        targetItem,
-            errorMessage =
-            self:EnsureBagItemRegistered(
+    local eligibleForTracking =
+        AL.ItemUtils:
+            ShouldTrack(
                 bagItem
             )
 
-        if not targetItem then
+    local hasRaidTradeTimer =
+        false
+
+    if eligibleForTracking then
+        hasRaidTradeTimer =
+            AL.ItemUtils:
+                IsBagItemTradeable(
+                    bag,
+                    slot
+                )
+    end
+
+    local canPersistentlyTrack =
+        eligibleForTracking
+        and hasRaidTradeTimer
+
+    --------------------------------------------------
+    -- Register only genuine raid-tradeable loot.
+    --------------------------------------------------
+
+    if canPersistentlyTrack then
+        local registeredItem,
+            errorMessage =
+                self:
+                    EnsureBagItemRegistered(
+                        bagItem
+                    )
+
+        if registeredItem then
+            targetItem =
+                registeredItem
+        else
+            --------------------------------------------------
+            -- Tracking failure must NEVER prevent a normal
+            -- roll from starting.
+            --------------------------------------------------
+
             AL:Print(
-                errorMessage
-                    or "The item could not be registered.",
+                (
+                    errorMessage
+                    or "The item could not be registered."
+                )
+                .. " Starting an untracked roll instead.",
+                1,
+                0.5,
+                0.2
+            )
+
+            targetItem =
+                bagItem
+        end
+    end
+
+    --------------------------------------------------
+    -- Shift + Alt = direct SR assignment.
+    --
+    -- Direct assignment creates persistent loot state,
+    -- so only permit it for a verified raid-tradeable
+    -- item.
+    --------------------------------------------------
+
+    if IsShiftKeyDown() then
+        if not canPersistentlyTrack then
+            AL:Print(
+                "Direct assignment requires an active "
+                .. "raid-trade timer. Use Alt-click "
+                .. "for a normal roll.",
                 1,
                 0.5,
                 0.2
@@ -1007,21 +1091,31 @@ function BagHooks:HandleModifiedClick(
 
             return
         end
+
+        AL.Loot:
+            DirectAward(
+                targetItem
+            )
+
+        return
     end
 
-    if IsShiftKeyDown() then
-        AL.Loot:DirectAward(
-            targetItem
-        )
-    else
-        AL.Roll:StartForItem(
+    --------------------------------------------------
+    -- Plain Alt-click:
+    --
+    -- ALWAYS allow the roll, regardless of whether
+    -- this item is persistently tracked.
+    --------------------------------------------------
+
+    AL.Roll:
+        StartForItem(
             targetItem
         )
 
+    if AL.UI then
         AL.UI:ShowLoot()
     end
 end
-
 --------------------------------------------------
 -- Initialisation
 --------------------------------------------------

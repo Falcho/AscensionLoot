@@ -2780,3 +2780,134 @@ function UI:RefreshSettings()
         )
     )
 end
+
+--------------------------------------------------
+-- Settings tab handling
+--------------------------------------------------
+
+function UI:ShowSettingsTab(tabName)
+    if not self.settingsFrame then
+        return
+    end
+
+    if not self.panels[tabName] then
+        tabName = "settings"
+    end
+
+    for name, panel in pairs(
+        self.panels
+    ) do
+        if name == tabName then
+            panel:Show()
+        else
+            panel:Hide()
+        end
+    end
+
+    for name, tab in pairs(
+        self.tabs
+    ) do
+        if name == tabName then
+            tab:Disable()
+        else
+            tab:Enable()
+        end
+    end
+
+    self.currentSettingsTab =
+        tabName
+
+    self:UpdateDynamicWidths()
+    self:RefreshAll()
+end
+
+--------------------------------------------------
+-- Main window controls
+--------------------------------------------------
+
+function UI:ShowLoot()
+    self:Create()
+
+    self.lootFrame:Show()
+
+    self:UpdateDynamicWidths()
+    self:RefreshLoot()
+    self:RefreshRoll()
+end
+
+function UI:ShowSettings(
+    tabName
+)
+    self:Create()
+
+    self:ShowSettingsTab(
+        tabName
+        or self.currentSettingsTab
+        or "settings"
+    )
+
+    self.settingsFrame:Show()
+
+    self:UpdateDynamicWidths()
+    self:RefreshAll()
+end
+
+function UI:ToggleLoot()
+    self:Create()
+
+    if self.lootFrame:IsShown() then
+        self.lootFrame:Hide()
+    else
+        self:ShowLoot()
+    end
+end
+
+function UI:ToggleSettings(
+    tabName
+)
+    self:Create()
+
+    if self.settingsFrame:IsShown() then
+        self.settingsFrame:Hide()
+    else
+        self:ShowSettings(
+            tabName
+        )
+    end
+end
+
+--------------------------------------------------
+-- Compatibility wrappers
+--------------------------------------------------
+
+function UI:Show(
+    tabName
+)
+    if tabName == "loot" then
+        self:ShowLoot()
+    else
+        self:ShowSettings(
+            tabName
+        )
+    end
+end
+
+function UI:Toggle()
+    self:ToggleLoot()
+end
+
+--------------------------------------------------
+-- Full refresh
+--------------------------------------------------
+
+function UI:RefreshAll()
+    if not self.created then
+        return
+    end
+
+    self:UpdateDynamicWidths()
+    self:RefreshLoot()
+    self:RefreshReserves()
+    self:RefreshHistory()
+    self:RefreshSettings()
+end
