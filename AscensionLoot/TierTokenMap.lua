@@ -265,6 +265,65 @@ function TT:GetToken(
     ]
 end
 
+function TT:GetTokenIDByMeta(
+    tier,
+    raid,
+    difficulty,
+    slot
+)
+    for tokenID, token in pairs(
+        self.tokens
+    ) do
+        if token.tier == tier
+            and token.raid == raid
+            and token.difficulty == difficulty
+            and token.slot == slot
+        then
+            return tokenID
+        end
+    end
+
+    return nil
+end
+
+function TT:AddRewardsByMeta(
+    tier,
+    raid,
+    difficulty,
+    slot,
+    pieceIDs
+)
+    local tokenID =
+        self:GetTokenIDByMeta(
+            tier,
+            raid,
+            difficulty,
+            slot
+        )
+
+    if not tokenID then
+        AL:Print(
+            string.format(
+                "No tier token found for %s / %s / %s / %s.",
+                tostring(tier),
+                tostring(raid),
+                tostring(difficulty),
+                tostring(slot)
+            ),
+            1,
+            0.3,
+            0.3
+        )
+
+        return 0
+    end
+
+    return self:AddRewards(
+        tokenID,
+        pieceIDs
+    )
+end
+
 function TT:GetTokenIDForPiece(
     pieceID
 )
@@ -683,18 +742,4 @@ TT:RegisterTokenSet(
         1706053,
         1706052,
     }
-)
-
---------------------------------------------------
--- Tier-piece reward mappings
---------------------------------------------------
-
---------------------------------------------------
--- Tier 1 - Ascended
---------------------------------------------------
-
--- Legs
-TT:AddReward(
-    2722359,
-    212569 -- Charred Defender's Legguards
 )
