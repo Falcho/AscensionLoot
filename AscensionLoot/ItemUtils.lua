@@ -110,7 +110,7 @@ local function containsTradeTimer(text)
     return false
 end
 
-function ItemUtils:IsBagItemTradeable(
+function ItemUtils:HasRaidTradeTimer(
     bag,
     slot
 )
@@ -178,6 +178,178 @@ function ItemUtils:IsBagItemTradeable(
     tradeScanTooltip:Hide()
 
     return false
+end
+
+--------------------------------------------------
+-- Soulbound bag-item detection
+--------------------------------------------------
+
+local function containsSoulbound(
+    text
+)
+    if type(text) ~= "string"
+        or text == ""
+    then
+        return false
+    end
+
+    --------------------------------------------------
+    -- Prefer the client's localized string.
+    --------------------------------------------------
+
+    if ITEM_SOULBOUND
+        and text:find(
+            ITEM_SOULBOUND,
+            1,
+            true
+        )
+    then
+        return true
+    end
+
+    --------------------------------------------------
+    -- English fallback for customised clients.
+    --------------------------------------------------
+
+    return string.lower(
+        text
+    ):find(
+        "soulbound",
+        1,
+        true
+    ) ~= nil
+end
+
+function ItemUtils:IsBagItemSoulbound(
+    bag,
+    slot
+)
+    if bag == nil
+        or slot == nil
+    then
+        return false
+    end
+
+    if not GetContainerItemLink(
+        bag,
+        slot
+    ) then
+        return false
+    end
+
+    tradeScanTooltip:Hide()
+    tradeScanTooltip:ClearLines()
+
+    tradeScanTooltip:SetOwner(
+        UIParent,
+        "ANCHOR_NONE"
+    )
+
+    tradeScanTooltip:SetBagItem(
+        bag,
+        slot
+    )
+
+    local tooltipName =
+        tradeScanTooltip:GetName()
+
+    local lineCount =
+        tradeScanTooltip:NumLines()
+        or 0
+
+    for lineIndex = 1,
+        lineCount
+    do
+        local leftLine =
+            _G[
+                tooltipName
+                .. "TextLeft"
+                .. lineIndex
+            ]
+
+        local rightLine =
+            _G[
+                tooltipName
+                .. "TextRight"
+                .. lineIndex
+            ]
+
+        local leftText =
+            leftLine
+            and leftLine:GetText()
+
+        local rightText =
+            rightLine
+            and rightLine:GetText()
+
+        if containsSoulbound(
+            leftText
+        )
+            or containsSoulbound(
+                rightText
+            )
+        then
+            tradeScanTooltip:Hide()
+
+            return true
+        end
+    end
+
+    tradeScanTooltip:Hide()
+
+    return false
+end
+
+--------------------------------------------------
+-- General bag-item tradeability
+--------------------------------------------------
+
+function ItemUtils:IsBagItemTradeable(
+    bag,
+    slot
+)
+    if bag == nil
+        or slot == nil
+    then
+        return false
+    end
+
+    if not GetContainerItemLink(
+        bag,
+        slot
+    ) then
+        return false
+    end
+
+    --------------------------------------------------
+    -- Newly looted soulbound raid items are
+    -- tradeable while their raid-trade timer exists.
+    --------------------------------------------------
+
+    if self:HasRaidTradeTimer(
+        bag,
+        slot
+    ) then
+        return true
+    end
+
+    --------------------------------------------------
+    -- Ordinary unbound items such as BoEs, recipes,
+    -- materials, etc. do not have a raid-trade timer
+    -- but are still normally tradeable.
+    --
+    -- An old soulbound copy of the same item must not
+    -- be selected by TradeManager.
+    --------------------------------------------------
+
+    if self:IsBagItemSoulbound(
+        bag,
+        slot
+    ) then
+        return false
+    end
+
+    return true
 end
 
 local tooltip = CreateFrame(

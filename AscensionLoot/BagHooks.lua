@@ -383,7 +383,7 @@ function BagHooks:FindUsableLocation(
     ) do
         local tradeable =
             AL.ItemUtils:
-                IsBagItemTradeable(
+                HasRaidTradeTimer(
                     location.bag,
                     location.slot
                 )
