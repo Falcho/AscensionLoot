@@ -448,6 +448,141 @@ function Loot:AssignHeldItem(item, playerName, reason)
     end
 end
 
+--------------------------------------------------
+-- Record a winner for an untracked bag item
+--------------------------------------------------
+
+function Loot:RecordUntrackedAssignment(
+    item,
+    winner,
+    reason,
+    winningRoll
+)
+    if not item
+        or not winner
+    then
+        return false
+    end
+
+    local holder =
+        UnitName("player")
+
+    local winnerIsHolder =
+        AL:NormalizeName(
+            winner
+        )
+        == AL:NormalizeName(
+            holder
+        )
+
+    local assignmentReason =
+        reason
+        or "Manual Roll"
+
+    --------------------------------------------------
+    -- This item deliberately does NOT enter the
+    -- persistent LootSession.
+    --
+    -- Manual rolls on ordinary bag items are
+    -- temporary distribution decisions only.
+    --------------------------------------------------
+
+    AL:AddHistory({
+        itemID =
+            item.id,
+
+        itemLink =
+            item.link,
+
+        winner =
+            winner,
+
+        reason =
+            assignmentReason,
+
+        winningRoll =
+            winningRoll,
+
+        masterLooter =
+            holder,
+
+        status =
+            winnerIsHolder
+            and "kept"
+            or "untracked_assigned",
+    })
+
+    --------------------------------------------------
+    -- Announce the result normally.
+    --------------------------------------------------
+
+    if AL.db.settings
+        .announceAssignments
+    then
+        if winnerIsHolder then
+            AL:Announce(
+                string.format(
+                    "%s assigned to %s. "
+                        .. "No trade required.",
+                    item.link
+                        or item.name
+                        or "Item",
+                    winner
+                )
+            )
+        else
+            AL:Announce(
+                string.format(
+                    "%s assigned to %s.",
+                    item.link
+                        or item.name
+                        or "Item",
+                    winner
+                )
+            )
+        end
+    end
+
+    --------------------------------------------------
+    -- Since the item is intentionally untracked,
+    -- AscensionLoot cannot put it into the persistent
+    -- automated trade queue.
+    --------------------------------------------------
+
+    if winnerIsHolder then
+        AL:Print(
+            string.format(
+                "%s is being kept by %s.",
+                item.link
+                    or item.name
+                    or "Item",
+                winner
+            )
+        )
+    else
+        AL:Print(
+            string.format(
+                "%s won %s. "
+                    .. "This item is not tracked; "
+                    .. "trade it manually.",
+                winner,
+                item.link
+                    or item.name
+                    or "the item"
+            ),
+            1,
+            0.82,
+            0
+        )
+    end
+
+    if AL.UI then
+        AL.UI:RefreshAll()
+    end
+
+    return true
+end
+
 function Loot:AwardActiveWinners(item)
     local active = AL.Roll.active
 
@@ -513,8 +648,11 @@ function Loot:AwardActiveWinners(item)
     end
 
     if #copies == 0 then
-        -- This fallback preserves direct awarding
-        -- from a currently open loot window.
+        --------------------------------------------------
+        -- Live corpse loot can still be awarded through
+        -- the normal Master Loot path.
+        --------------------------------------------------
+
         if item.source == "loot"
             and winners[1]
         then
@@ -526,6 +664,41 @@ function Loot:AwardActiveWinners(item)
 
             return
         end
+
+        --------------------------------------------------
+        -- An ordinary bag item may have been manually
+        -- Alt-clicked for a temporary roll without ever
+        -- entering the persistent LootSession.
+        --------------------------------------------------
+
+        if item.source == "bag"
+            and winners[1]
+        then
+            local winner =
+                winners[1]
+
+            self:RecordUntrackedAssignment(
+                item,
+                winner.name,
+                winner.categoryLabel,
+                winner.roll
+            )
+
+            AL.Roll.active =
+                nil
+
+            if AL.UI then
+                AL.UI:RefreshAll()
+            end
+
+            return
+        end
+
+        --------------------------------------------------
+        -- Anything else indicates an actual mismatch:
+        -- something that should have been tracked has
+        -- disappeared from the LootSession.
+        --------------------------------------------------
 
         AL:Print(
             "No unassigned copies of this item "
