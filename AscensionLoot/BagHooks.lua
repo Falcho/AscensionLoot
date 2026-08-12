@@ -969,6 +969,16 @@ function BagHooks:HandleModifiedClick(
     end
 
     --------------------------------------------------
+    -- Ctrl + Alt is used by Ascension's transmog
+    -- system. Never treat it as an AscensionLoot
+    -- modified click.
+    --------------------------------------------------
+
+    if IsControlKeyDown() then
+        return
+    end
+
+    --------------------------------------------------
     -- Resolve the clicked bag slot.
     --------------------------------------------------
 

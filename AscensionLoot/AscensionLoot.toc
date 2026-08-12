@@ -9,8 +9,6 @@ Core.lua
 Base64.lua
 Json.lua
 ItemUtils.lua
-TierTokenMap.lua
-TierTokenData.lua
 SoftReserve.lua
 LootSession.lua
 TradeManager.lua
