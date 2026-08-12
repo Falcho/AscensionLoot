@@ -4,13 +4,14 @@ AscensionLoot is a World of Warcraft 3.3.5a raid-loot addon for Ascension: Conqu
 
 It is built for raids that collect loot on one designated holder and distribute it later using BisBeard soft reserves, structured rolls, persistent loot tracking, and assisted trading.
 
-> **Current version:** 0.5.0
+> **Current version:** 0.6.0
 
 ## Features
 
-- BisBeard RollFor soft-reserve import
+- Direct support for BisBeard difficulty-specific tier-token reserves
 - Persistent loot queue across bosses, reloads, and relogs
 - Master Loot and Group Loot workflows
+- Raid leader/assistant roll authority
 - SR, MS, and OS roll handling
 - Multiple-copy and duplicate-SR support
 - Synchronized roll window for raid members using AscensionLoot
@@ -24,6 +25,10 @@ It is built for raids that collect loot on one designated holder and distribute 
 - Configurable loot, roll, trade, and interface settings
 - Loot history with clear-history confirmation
 - Built-in UI demo with safe cleanup
+- Ascension Ctrl+Alt transmog-click compatibility
+- Improved multiple-copy loot distribution
+- Automatic continuation through queued trades
+- General tradeability detection for ordinary unbound items
 
 ## Roll rules
 
@@ -116,10 +121,13 @@ For beta testing, enable Lua errors:
 
 ## Bag controls
 
-- **Alt + Left Click:** Start a roll for a tradeable bag item
-- **Shift + Alt + Left Click:** Assign a solo-soft-reserved item directly
+- **Alt + Left Click:** Start a roll for a bag item
+- **Shift + Alt + Left Click:** Directly assign a verified raid-tradeable item when exactly one player soft reserved it
+- **Ctrl + Alt + Left Click:** Reserved for Ascension's transmog system; AscensionLoot ignores this combination
 
-Only items with an active temporary raid-trade timer are accepted.
+Ordinary bag items may be rolled without being added to the persistent loot session.
+
+Only eligible items with an active temporary raid-trade timer are persistently tracked for delayed raid distribution.
 
 ## Minimap button
 

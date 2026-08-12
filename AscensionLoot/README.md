@@ -8,29 +8,27 @@ Ascension Loot does **not** include GDKP auctions, gold bidding, pots, cuts, bal
 
 ## Development status
 
-Current public-beta version: **0.4.1**
+Current public-beta version: **0.6.0**
 
-This is a pre-release intended for raid testing and user feedback.
+AscensionLoot 0.6.0 is primarily a raid-loot reliability and automation update.
 
-Version 0.4.0-beta.1 focuses on safer automation, clearer roll visibility, better data controls, and compatibility fixes.
+### Highlights in 0.6.0
 
-### Highlights in 0.4.0-beta.1
+- Direct support for BisBeard's difficulty-specific tier-token soft reserves
+- Improved Master Loot and Group Loot bag reconciliation
+- Physical loot copies are tracked individually
+- Multiple identical drops can select multiple winners from one roll
+- Only raid leaders and assistants may start rolls while in a raid
+- Improved synchronized player roll and tie-break handling
+- Player roll windows close after an accepted roll
+- Ordinary bag items can be rolled without polluting the persistent loot session
+- Raid-trade timer detection is separated from general item tradeability
+- Ordinary tradeable BoEs, recipes and materials can be used by the trade assistant
+- Old soulbound copies remain protected from automatic trading
+- Successfully completed trades automatically advance to the next queued trade
+- Ctrl + Alt bag clicks are ignored by AscensionLoot for compatibility with Ascension's transmog system
 
-- Configurable loot, roll, trade, autoloot, and interface settings
-- Roll-start announcements now include the total roll duration
-- Halfway raid warnings for roll timers longer than 10 seconds
-- Raid-warning countdown during the final five seconds
-- A confirmation-based **Clear History** action
-- `/al clearhistory`
-- Improved BisBeard import text area
-- **Clear Data** now clears both reserve data and the pasted import string
-- Separate **Load UI Demo** and **Clear UI Demo** controls
-- Demo data is isolated and can be removed without affecting real loot
-- Non-tradeable equipped gear is ignored when moved into the bags
-- Bag items must display the temporary raid-trade timer before being tracked or traded
-- Multiple World of Warcraft 3.3.5a compatibility and Lua error fixes
-
-Ascension-specific live testing is still recommended because the client contains custom server and interface behaviour.
+Ascension-specific live raid testing is still recommended because the client contains custom server and interface behaviour.
 
 ## Main features
 
