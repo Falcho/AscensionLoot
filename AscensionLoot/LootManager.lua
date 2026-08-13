@@ -405,6 +405,18 @@ function Loot:OnBindConfirm(
     )
 
     --------------------------------------------------
+    -- The bind confirmation starts the final phase of
+    -- the handout. Give the server a fresh timeout
+    -- window before considering a retry.
+    --------------------------------------------------
+
+    pending.bindConfirmedAt =
+        GetTime()
+
+    pending.startedAt =
+        GetTime()
+
+    --------------------------------------------------
     -- UIParent handles the same LOOT_BIND_CONFIRM
     -- event and may display LOOT_BIND after our event
     -- handler has already confirmed it.
