@@ -176,26 +176,27 @@ function Trade:GetNextAutoTradeEntry()
                 == "awaiting_trade"
             and entry.winner
         then
-            local normalizedWinner =
-                AL:NormalizeName(
-                    entry.winner
-                )
-
-            local manualFallback =
-                normalizedWinner
-                and self.notifiedWinners[
-                    normalizedWinner
-                ]
-
             local status =
                 entry.tradeStatus
 
-            if not manualFallback
-                and (
-                    status == "queued"
-                    or status
-                        == "waiting_for_combat"
-                )
+            --------------------------------------------------
+            -- Only freshly queued items and items that were
+            -- waiting for combat may initiate an automatic
+            -- trade.
+            --
+            -- waiting_for_range / waiting_for_player /
+            -- trade_cancelled / trade_request_failed entries
+            -- remain available for manual incoming trades,
+            -- but do not retry on their own.
+            --
+            -- If that player later wins another item, the new
+            -- entry has status "queued", giving them one new
+            -- automatic attempt.
+            --------------------------------------------------
+
+            if status == "queued"
+                or status
+                    == "waiting_for_combat"
             then
                 table.insert(
                     candidates,
@@ -941,10 +942,10 @@ function Trade:OnTradeClosed()
     self.tradeOpen = false
     self.pendingFillTarget = nil
 
-if self.fillFrame then
-    self.fillFrame:Hide()
-    self.fillFrame.elapsed = 0
-end
+    if self.fillFrame then
+        self.fillFrame:Hide()
+        self.fillFrame.elapsed = 0
+    end
 
     if #self.filledEntries == 0 then
         self.requestedEntry = nil
@@ -966,37 +967,64 @@ end
 end
 
 function Trade:VerifyClosedTrade()
-    local verification = self.pendingVerification
-    self.pendingVerification = nil
+    local verification =
+        self.pendingVerification
+
+    self.pendingVerification =
+        nil
 
     if not verification then
         return
     end
 
     local tradeCompleted =
-        self.tradeCompleted == true
+        self.tradeCompleted
+        == true
 
-    local fallbackwinner = nil
+    local fallbackWinner =
+        nil
 
-    for _, value in ipairs(verification) do
-        local entry = value.entry
+    local completedWinner =
+        self.tradeTarget
+
+    for _, value in ipairs(
+        verification
+    ) do
+        local entry =
+            value.entry
 
         if tradeCompleted then
             if AL.LootSession
-                and AL.LootSession.MarkTraded
+                and AL.LootSession
+                    .MarkTraded
             then
-                AL.LootSession:MarkTraded(
-                    entry,
-                    self.tradeTarget
-                )
+                AL.LootSession:
+                    MarkTraded(
+                        entry,
+                        self.tradeTarget
+                    )
             else
-                entry.status = "traded"
-                entry.tradeStatus = "completed"
-                entry.tradedAt = time()
+                entry.status =
+                    "traded"
+
+                entry.tradeStatus =
+                    "completed"
+
+                entry.tradedAt =
+                    time()
+
                 entry.tradedTo =
-                    self.tradeTarget or entry.winner
-                entry.tradeSlot = nil
+                    self.tradeTarget
+                    or entry.winner
+
+                entry.tradeSlot =
+                    nil
             end
+
+            completedWinner =
+                completedWinner
+                or entry.winner
+
         else
             --------------------------------------------------
             -- Do not automatically reopen a cancelled trade.
@@ -1020,37 +1048,32 @@ function Trade:VerifyClosedTrade()
                 fallbackWinner
                 or entry.winner
         end
-
-        if tradeCompleted then
-            local completedWinner =
-                self.tradeTarget
-
-            if not completedWinner
-                and verification[1]
-                and verification[1].entry
-            then
-                completedWinner =
-                    verification[1]
-                        .entry
-                        .winner
-            end
-
-            self:
-                ClearWinnerNotificationIfDone(
-                    completedWinner
-                )
-
-        elseif fallbackWinner then
-            self:
-                NotifyWinnerTradeNeeded(
-                    fallbackWinner
-                )
-        end
     end
 
     --------------------------------------------------
-    -- Remember whether this trade actually completed
-    -- before resetting transient state.
+    -- Update the winner-level fallback state once,
+    -- after all items in the trade have been handled.
+    --------------------------------------------------
+
+    if tradeCompleted then
+        self:
+            ClearWinnerNotificationIfDone(
+                completedWinner
+            )
+
+    elseif fallbackWinner then
+        self:
+            NotifyWinnerTradeNeeded(
+                fallbackWinner
+            )
+    end
+
+    --------------------------------------------------
+    -- Continue to another eligible winner.
+    --
+    -- The cancelled winner's old entries have
+    -- tradeStatus "trade_cancelled", so
+    -- GetNextAutoTradeEntry() will skip them.
     --------------------------------------------------
 
     local shouldContinue =
@@ -1059,26 +1082,28 @@ function Trade:VerifyClosedTrade()
         and AL.db.settings
             .autoOpenTrade
 
-    self.tradeCompleted = false
-    self.requestedEntry = nil
-    self.requestedWinner = nil
-    self.requestedAt = nil
-    self.tradeTarget = nil
+    self.tradeCompleted =
+        false
+
+    self.requestedEntry =
+        nil
+
+    self.requestedWinner =
+        nil
+
+    self.requestedAt =
+        nil
+
+    self.tradeTarget =
+        nil
 
     if AL.UI then
         AL.UI:RefreshAll()
     end
 
-    --------------------------------------------------
-    -- A successfully completed trade advances to the
-    -- next winner automatically.
-    --
-    -- Cancelled/declined trades deliberately do NOT
-    -- auto-reopen and harass the same player.
-    --------------------------------------------------
-
     if shouldContinue then
-        self:ScheduleNextTrade()
+        self:
+            ScheduleNextTrade()
     end
 end
 
