@@ -14,11 +14,18 @@ Trade.tradeCompleted = false
 Trade.filledEntries = {}
 Trade.pendingVerification = nil
 
-Trade.retryElapsed = 0
 Trade.pendingFillTarget = nil
 
-local AUTO_TRADE_RETRY_INTERVAL =
-    0.75
+--------------------------------------------------
+-- Winners who have fallen back to manual trade.
+--
+-- Runtime-only state. Once all of a winner's
+-- pending loot has been traded, the flag is cleared.
+--------------------------------------------------
+
+Trade.notifiedWinners =
+    Trade.notifiedWinners
+    or {}
 
 local TRADE_REQUEST_TIMEOUT =
     3.0
@@ -145,6 +152,187 @@ function Trade:GetNextPendingEntry()
     return nil
 end
 
+--------------------------------------------------
+-- Find the next entry that is still eligible for
+-- automatic trade initiation.
+--
+-- Winners who were already told to trade us manually
+-- must never block later winners.
+--------------------------------------------------
+
+function Trade:GetNextAutoTradeEntry()
+    if not AL.LootSession then
+        return nil
+    end
+
+    local candidates = {}
+
+    for _, entry in ipairs(
+        AL.LootSession:
+            GetItems()
+            or {}
+    ) do
+        if entry.status
+                == "awaiting_trade"
+            and entry.winner
+        then
+            local normalizedWinner =
+                AL:NormalizeName(
+                    entry.winner
+                )
+
+            local manualFallback =
+                normalizedWinner
+                and self.notifiedWinners[
+                    normalizedWinner
+                ]
+
+            local status =
+                entry.tradeStatus
+
+            if not manualFallback
+                and (
+                    status == "queued"
+                    or status
+                        == "waiting_for_combat"
+                )
+            then
+                table.insert(
+                    candidates,
+                    entry
+                )
+            end
+        end
+    end
+
+    table.sort(
+        candidates,
+        function(left, right)
+            return (
+                left.assignedAt
+                or 0
+            )
+                < (
+                    right.assignedAt
+                    or 0
+                )
+        end
+    )
+
+    return candidates[1]
+end
+
+--------------------------------------------------
+-- Tell a winner to trade the loot holder manually.
+--
+-- Only one whisper is sent per winner while they
+-- have pending loot.
+--------------------------------------------------
+
+function Trade:NotifyWinnerTradeNeeded(
+    playerName
+)
+    if not playerName then
+        return
+    end
+
+    if samePlayer(
+        playerName,
+        UnitName("player")
+    )
+    then
+        return
+    end
+
+    local normalized =
+        AL:NormalizeName(
+            playerName
+        )
+
+    if not normalized
+        or normalized == ""
+    then
+        return
+    end
+
+    if self.notifiedWinners[
+        normalized
+    ]
+    then
+        return
+    end
+
+    local pending =
+        self:
+            GetPendingEntriesForWinner(
+                playerName
+            )
+
+    local count =
+        #pending
+
+    if count <= 0 then
+        return
+    end
+
+    self.notifiedWinners[
+        normalized
+    ] = true
+
+    local message
+
+    if count == 1 then
+        message =
+            "AscensionLoot: Your awarded item is ready. "
+            .. "Please trade me when you're nearby."
+    else
+        message =
+            string.format(
+                "AscensionLoot: You have %d awarded items ready. "
+                    .. "Please trade me when you're nearby.",
+                count
+            )
+    end
+
+    AL:QueueChatMessage(
+        message,
+        "WHISPER",
+        playerName
+    )
+end
+
+--------------------------------------------------
+-- Allow normal automatic trading for this winner
+-- again after all pending loot has been delivered.
+--------------------------------------------------
+
+function Trade:ClearWinnerNotificationIfDone(
+    playerName
+)
+    if not playerName then
+        return
+    end
+
+    if #self:
+        GetPendingEntriesForWinner(
+            playerName
+        ) > 0
+    then
+        return
+    end
+
+    local normalized =
+        AL:NormalizeName(
+            playerName
+        )
+
+    if normalized then
+        self.notifiedWinners[
+            normalized
+        ] = nil
+    end
+end
+
 function Trade:Queue(entry, deferTradeStart)
     if not entry or not entry.winner then
         return
@@ -166,7 +354,7 @@ function Trade:Queue(entry, deferTradeStart)
 end
 
 function Trade:TryStart(entry)
-    entry = entry or self:GetNextPendingEntry()
+    entry = entry or self:GetNextAutoTradeEntry()
 
     if not entry then
         AL:Print("There are no items awaiting trade.")
@@ -177,6 +365,15 @@ function Trade:TryStart(entry)
         or (TradeFrame and TradeFrame:IsShown())
     then
         AL:Print("A trade is already open.", 1, 0.6, 0.2)
+        return false
+    end
+
+    --------------------------------------------------
+    -- A trade request may be in flight even though
+    -- TRADE_SHOW has not fired yet.
+    --------------------------------------------------
+
+    if self.requestedEntry then
         return false
     end
 
@@ -196,7 +393,11 @@ function Trade:TryStart(entry)
     local unit = self:FindUnitByName(entry.winner)
 
     if not unit then
-        entry.tradeStatus = "waiting_for_player"
+        entry.tradeStatus =
+            "waiting_for_player"
+
+        entry.tradeError =
+            "The winner could not be found."
 
         AL:Print(
             entry.winner
@@ -206,9 +407,21 @@ function Trade:TryStart(entry)
             0.2
         )
 
+        self:
+            NotifyWinnerTradeNeeded(
+                entry.winner
+            )
+
         if AL.UI then
             AL.UI:RefreshAll()
         end
+
+        --------------------------------------------------
+        -- This winner is now manual-fallback. Give the
+        -- next queued winner a chance instead.
+        --------------------------------------------------
+
+        self:ScheduleNextTrade()
 
         return false
     end
@@ -236,8 +449,16 @@ function Trade:TryStart(entry)
         return true
     end
 
-    if not self:IsUnitInTradeRange(unit) then
-        entry.tradeStatus = "waiting_for_range"
+    if not self:
+        IsUnitInTradeRange(
+            unit
+        )
+    then
+        entry.tradeStatus =
+            "waiting_for_range"
+
+        entry.tradeError =
+            "The winner is not currently in trade range."
 
         AL:Print(
             entry.winner
@@ -247,9 +468,16 @@ function Trade:TryStart(entry)
             0.2
         )
 
+        self:
+            NotifyWinnerTradeNeeded(
+                entry.winner
+            )
+
         if AL.UI then
             AL.UI:RefreshAll()
         end
+
+        self:ScheduleNextTrade()
 
         return false
     end
@@ -690,7 +918,7 @@ function Trade:ScheduleNextTrade()
 
                 local nextEntry =
                     Trade:
-                        GetNextPendingEntry()
+                        GetNextAutoTradeEntry()
 
                 if nextEntry then
                     Trade:
@@ -748,6 +976,8 @@ function Trade:VerifyClosedTrade()
     local tradeCompleted =
         self.tradeCompleted == true
 
+    local fallbackwinner = nil
+
     for _, value in ipairs(verification) do
         local entry = value.entry
 
@@ -768,11 +998,53 @@ function Trade:VerifyClosedTrade()
                 entry.tradeSlot = nil
             end
         else
-            -- Trade was cancelled, declined or closed
-            -- without completing.
-            entry.status = "awaiting_trade"
-            entry.tradeStatus = "trade_cancelled"
-            entry.tradeSlot = nil
+            --------------------------------------------------
+            -- Do not automatically reopen a cancelled trade.
+            -- The winner receives one whisper and can trade
+            -- the loot holder when ready.
+            --------------------------------------------------
+
+            entry.status =
+                "awaiting_trade"
+
+            entry.tradeStatus =
+                "trade_cancelled"
+
+            entry.tradeError =
+                nil
+
+            entry.tradeSlot =
+                nil
+
+            fallbackWinner =
+                fallbackWinner
+                or entry.winner
+        end
+
+        if tradeCompleted then
+            local completedWinner =
+                self.tradeTarget
+
+            if not completedWinner
+                and verification[1]
+                and verification[1].entry
+            then
+                completedWinner =
+                    verification[1]
+                        .entry
+                        .winner
+            end
+
+            self:
+                ClearWinnerNotificationIfDone(
+                    completedWinner
+                )
+
+        elseif fallbackWinner then
+            self:
+                NotifyWinnerTradeNeeded(
+                    fallbackWinner
+                )
         end
     end
 
@@ -782,8 +1054,7 @@ function Trade:VerifyClosedTrade()
     --------------------------------------------------
 
     local shouldContinue =
-        tradeCompleted
-        and AL.db
+        AL.db
         and AL.db.settings
         and AL.db.settings
             .autoOpenTrade
@@ -812,38 +1083,33 @@ function Trade:VerifyClosedTrade()
 end
 
 function Trade:OnCombatEnded()
-    if not AL.db.settings.autoOpenTrade then
+    if not AL.db.settings
+        .autoOpenTrade
+    then
         return
     end
 
-    local entry = self:GetNextPendingEntry()
+    local entry =
+        self:
+            GetNextAutoTradeEntry()
 
-    if entry
-        and entry.tradeStatus == "waiting_for_combat"
-    then
-        self:TryStart(entry)
+    if entry then
+        self:
+            TryStart(
+                entry
+            )
     end
 end
 
 --------------------------------------------------
--- Retry queued automatic trades
+-- Detect an outgoing trade request that never
+-- produced TRADE_SHOW.
 --------------------------------------------------
 
-function Trade:OnUpdate(
-    elapsed
-)
-    if not AL.db
-        or not AL.db.settings
-        or not AL.db.settings
-            .autoOpenTrade
-    then
-        self.retryElapsed = 0
+function Trade:OnUpdate()
+    if not self.requestedEntry then
         return
     end
-
-    --------------------------------------------------
-    -- Never interfere with an active trade.
-    --------------------------------------------------
 
     if self.tradeOpen
         or (
@@ -852,138 +1118,63 @@ function Trade:OnUpdate(
                 IsShown()
         )
     then
-        self.retryElapsed = 0
         return
     end
 
-    --------------------------------------------------
-    -- A trade request was sent but no TRADE_SHOW
-    -- arrived.
-    --
-    -- Don't spam the winner with repeated requests.
-    -- Mark it as failed and leave it for a manual
-    -- retry.
-    --------------------------------------------------
+    if not self.requestedAt then
+        return
+    end
 
-    if self.requestedEntry then
-        local requestedAt =
-            tonumber(
-                self.requestedAt
-            )
-            or GetTime()
+    if GetTime()
+        - self.requestedAt
+        < TRADE_REQUEST_TIMEOUT
+    then
+        return
+    end
 
-        if GetTime()
-            - requestedAt
-            < TRADE_REQUEST_TIMEOUT
-        then
-            return
-        end
-
+    local failedEntry =
         self.requestedEntry
-            .tradeStatus =
-                "trade_request_failed"
 
-        self.requestedEntry
-            .tradeError =
-                "The trade window did not open."
+    local failedWinner =
+        self.requestedWinner
+        or (
+            failedEntry
+            and failedEntry.winner
+        )
 
-        self.requestedEntry =
-            nil
+    if failedEntry then
+        failedEntry.status =
+            "awaiting_trade"
 
-        self.requestedWinner =
-            nil
+        failedEntry.tradeStatus =
+            "trade_request_failed"
 
-        self.requestedAt =
-            nil
-
-        if AL.UI then
-            AL.UI:RefreshAll()
-        end
-
-        return
+        failedEntry.tradeError =
+            "The trade window did not open."
     end
 
-    self.retryElapsed =
-        (self.retryElapsed or 0)
-        + (elapsed or 0)
+    self.requestedEntry =
+        nil
 
-    if self.retryElapsed
-        < AUTO_TRADE_RETRY_INTERVAL
-    then
-        return
-    end
+    self.requestedWinner =
+        nil
 
-    self.retryElapsed = 0
-
-    local entry =
-        self:GetNextPendingEntry()
-
-    if not entry then
-        return
-    end
-
-    --------------------------------------------------
-    -- Only automatically retry states that simply
-    -- mean "not ready yet".
-    --
-    -- A cancelled trade or actual item failure must
-    -- not continually reopen a trade window.
-    --------------------------------------------------
-
-    local status =
-        entry.tradeStatus
-
-    if status ~= "queued"
-        and status
-            ~= "waiting_for_player"
-        and status
-            ~= "waiting_for_range"
-        and status
-            ~= "waiting_for_combat"
-    then
-        return
-    end
-
-    if InCombatLockdown
-        and InCombatLockdown()
-    then
-        entry.tradeStatus =
-            "waiting_for_combat"
-
-        return
-    end
-
-    local unit =
-        self:
-            FindUnitByName(
-                entry.winner
-            )
-
-    if not unit then
-        entry.tradeStatus =
-            "waiting_for_player"
-
-        return
-    end
-
-    if unit ~= "player"
-        and not self:
-            IsUnitInTradeRange(
-                unit
-            )
-    then
-        entry.tradeStatus =
-            "waiting_for_range"
-
-        return
-    end
-
-    --------------------------------------------------
-    -- The winner is now available and in range.
-    --------------------------------------------------
+    self.requestedAt =
+        nil
 
     self:
-        TryStart(
-            entry
+        NotifyWinnerTradeNeeded(
+            failedWinner
         )
+
+    if AL.UI then
+        AL.UI:RefreshAll()
+    end
+
+    --------------------------------------------------
+    -- The failed winner is now manual-fallback.
+    -- Continue with another queued winner if possible.
+    --------------------------------------------------
+
+    self:ScheduleNextTrade()
 end

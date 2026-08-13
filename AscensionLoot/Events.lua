@@ -177,7 +177,7 @@ SlashCmdList["ASCENSIONLOOT"] = function(message)
         AL.Loot:LoadDemo()
     elseif command == "trade" then
         if AL.Trade then
-            AL.Trade:TryStart()
+            AL.Trade:TryStart(AL.Trade:GetNextPendingEntry())
         end
     elseif command == "clearhistory" then
         if AL.UI then

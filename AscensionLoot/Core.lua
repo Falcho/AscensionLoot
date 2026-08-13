@@ -723,9 +723,19 @@ local function processChatQueue()
 
     local entry = table.remove(chatQueue, 1)
 
-    if entry and entry.text and entry.chatType then
-        SendChatMessage(entry.text, entry.chatType)
-        lastChatSentAt = now
+    if entry
+        and entry.text
+        and entry.chatType
+    then
+        SendChatMessage(
+            entry.text,
+            entry.chatType,
+            nil,
+            entry.target
+        )
+
+        lastChatSentAt =
+            now
     end
 
     if #chatQueue == 0 then
@@ -735,7 +745,7 @@ end
 
 chatFrame:SetScript("OnUpdate", processChatQueue)
 
-function AL:QueueChatMessage(text, chatType)
+function AL:QueueChatMessage(text, chatType, target)
     local safeText = self:SanitizeChatText(text)
 
     if safeText == "" or not chatType then
@@ -746,6 +756,7 @@ function AL:QueueChatMessage(text, chatType)
         table.insert(chatQueue, {
             text = part,
             chatType = chatType,
+            target = target,
         })
     end
 
