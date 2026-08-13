@@ -61,10 +61,6 @@ Loot.pendingAutoShows = {}
 Loot.autoLooting = false
 Loot.nextAutoAction = 0
 Loot.isOpen = false
-Loot.liveRollGraceUntil = 0
-
-local LIVE_LOOT_ROLL_GRACE =
-    2.0
 
 --------------------------------------------------
 -- Master Looter handout reliability

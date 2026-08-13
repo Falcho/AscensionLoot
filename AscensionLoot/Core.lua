@@ -31,8 +31,6 @@ local defaults = {
         -- Master Loot
         --------------------------------------------------
 
-        autoCollectTrackedLoot = true,
-
         -- More aggressive automation is disabled for
         -- new public-beta installations.
         autoMasterLootToSelf = false,

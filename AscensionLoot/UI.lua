@@ -2255,18 +2255,10 @@ function UI:CreateSettingsPanel(panel)
     )
 
     addCheckbox(
-        "Automatically collect tracked loot",
-        "autoCollectTrackedLoot",
-        18,
-        -143,
-        "Assigns eligible tracked Master Loot items to the configured loot holder."
-    )
-
-    addCheckbox(
         "Assign all loot to me",
         "autoMasterLootToSelf",
         18,
-        -171,
+        -143,
         "When you are the Master Looter, automatically assigns all Master-Looter-controlled loot directly to you."
     )
 
@@ -2274,7 +2266,7 @@ function UI:CreateSettingsPanel(panel)
         "Auto-confirm addon BoP warnings",
         "autoConfirmMasterLootToSelf",
         18,
-        -199,
+        -171,
         "Only confirms Bind-on-Pickup warnings for Master Loot assignments initiated by AscensionLoot."
     )
 
