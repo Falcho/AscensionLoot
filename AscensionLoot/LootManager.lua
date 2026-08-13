@@ -224,6 +224,198 @@ function Loot:GetItemBySlot(slot)
     end
 end
 
+--------------------------------------------------
+-- Live loot-window item access
+--------------------------------------------------
+
+function Loot:GetLiveItemBySlot(
+    slot
+)
+    if not self.isOpen
+        or not slot
+    then
+        return nil
+    end
+
+    local item =
+        lootSlotItem(
+            slot
+        )
+
+    if not item then
+        return nil
+    end
+
+    item.registrationSource =
+        "live_loot"
+
+    return item
+end
+
+--------------------------------------------------
+-- Reserve a live corpse item for an AscensionLoot
+-- roll instead of automatic collection.
+--------------------------------------------------
+
+function Loot:PrepareLiveRollItem(
+    slot
+)
+    if not self.isOpen then
+        return nil,
+            "The loot window is not open."
+    end
+
+    if not self:IsMasterLooter() then
+        return nil,
+            "You must be the Master Looter "
+            .. "to roll an item directly from "
+            .. "the boss loot window."
+    end
+
+    local item =
+        self:
+            GetLiveItemBySlot(
+                slot
+            )
+
+    if not item then
+        return nil,
+            "The clicked loot item could not "
+            .. "be identified."
+    end
+
+    if self:
+        IsLootSlotLocked(
+            slot
+        )
+    then
+        return nil,
+            "That loot item is currently locked."
+    end
+
+    --------------------------------------------------
+    -- If GiveMasterLoot has already been attempted for
+    -- this exact slot, it is too late to safely turn it
+    -- into a live roll.
+    --------------------------------------------------
+
+    local pending =
+        self.pendingCollection
+        or self.pendingMasterLoot
+
+    if pending
+        and pending.slot == slot
+        and pending.item
+        and tonumber(
+            pending.item.id
+        ) == tonumber(
+            item.id
+        )
+    then
+        return nil,
+            "AscensionLoot has already started "
+            .. "assigning this item."
+    end
+
+    if self.pendingAward
+        and self.pendingAward.slot
+            == slot
+    then
+        return nil,
+            "This item is already being awarded."
+    end
+
+    --------------------------------------------------
+    -- Remove this physical item from the automatic
+    -- Master Looter collection queue.
+    --------------------------------------------------
+
+    for index =
+        #(
+            self.collectionQueue
+            or {}
+        ),
+        1,
+        -1
+    do
+        local action =
+            self.collectionQueue[
+                index
+            ]
+
+        if action
+            and action.item
+            and tonumber(
+                action.item.id
+            ) == tonumber(
+                item.id
+            )
+            and tonumber(
+                action.slot
+            ) == tonumber(
+                slot
+            )
+        then
+            self:
+                CancelCollectionActionExpectation(
+                    action
+                )
+
+            table.remove(
+                self.collectionQueue,
+                index
+            )
+        end
+    end
+
+    --------------------------------------------------
+    -- It may also exist in the ordinary autoloot
+    -- queue. Remove that action as well.
+    --------------------------------------------------
+
+    for index =
+        #(
+            self.autoQueue
+            or {}
+        ),
+        1,
+        -1
+    do
+        local action =
+            self.autoQueue[
+                index
+            ]
+
+        if action
+            and action.kind
+                == "item"
+            and tonumber(
+                action.itemID
+            ) == tonumber(
+                item.id
+            )
+            and tonumber(
+                action.slot
+            ) == tonumber(
+                slot
+            )
+        then
+            table.remove(
+                self.autoQueue,
+                index
+            )
+        end
+    end
+
+    item.liveLootRoll =
+        true
+
+    item.registrationSource =
+        "live_loot_roll"
+
+    return item
+end
+
 function Loot:FindCandidateIndex(slot, playerName)
     local wanted = AL:NormalizeName(playerName)
     if not wanted then return nil end
@@ -239,10 +431,38 @@ function Loot:FindCandidateIndex(slot, playerName)
     return nil
 end
 
-function Loot:ValidateItemSlot(item)
-    if not item or item.demo then return false, "Demo items cannot be awarded." end
-    if not self.isOpen then return false, "The loot window is not open." end
-    if not item.slot then return false, "The item has no active loot slot." end
+function Loot:ValidateItemSlot(
+    item
+)
+    if not item
+        or item.demo
+    then
+        return false,
+            "Demo items cannot be awarded."
+    end
+
+    if not self.isOpen then
+        return false,
+            "The loot window is not open."
+    end
+
+    if not item.slot then
+        return false,
+            "The item has no active loot slot."
+    end
+
+    --------------------------------------------------
+    -- Live loot slots may move while other corpse
+    -- items are collected during a roll.
+    --------------------------------------------------
+
+    if item.source == "loot"
+        and self.FindCurrentItemSlot
+    then
+        local currentSlot = self:FindCurrentItemSlot(item.id, item.slot)
+        if not currentSlot then return false, "That item is no longer available in the loot window." end
+        item.slot = currentSlot
+    end
 
     local currentLink = GetLootSlotLink(item.slot)
     if not currentLink then return false, "That loot slot is no longer available." end
@@ -380,20 +600,36 @@ function Loot:OnBindConfirm(
         self.pendingCollection
         or self.pendingMasterLoot
 
-    if not pending then
+    local awardToSelf =
+        self.pendingAward
+        and self.pendingAward.slot
+            == slot
+        and AL:NormalizeName(
+            self.pendingAward.playerName
+        )
+            == AL:NormalizeName(
+                UnitName("player")
+            )
+
+    if not pending
+        and not awardToSelf
+    then
         return
     end
 
-    if pending.slot ~= slot then
-        return
-    end
+    if pending then
+        if pending.slot ~= slot then
+            return
+        end
 
-    --------------------------------------------------
-    -- Never confirm somebody else's loot warning.
-    --------------------------------------------------
+        --------------------------------------------------
+        -- Never confirm somebody else's automatic
+        -- collection warning.
+        --------------------------------------------------
 
-    if not pending.holderIsPlayer then
-        return
+        if not pending.holderIsPlayer then
+            return
+        end
     end
 
     --------------------------------------------------
@@ -405,23 +641,21 @@ function Loot:OnBindConfirm(
     )
 
     --------------------------------------------------
-    -- The bind confirmation starts the final phase of
-    -- the handout. Give the server a fresh timeout
-    -- window before considering a retry.
+    -- Automatic collection uses the B handout timeout.
+    -- Give it a fresh window after confirmation.
     --------------------------------------------------
 
-    pending.bindConfirmedAt =
-        GetTime()
+    if pending then
+        pending.bindConfirmedAt =
+            GetTime()
 
-    pending.startedAt =
-        GetTime()
+        pending.startedAt =
+            GetTime()
+    end
 
     --------------------------------------------------
     -- UIParent handles the same LOOT_BIND_CONFIRM
-    -- event and may display LOOT_BIND after our event
-    -- handler has already confirmed it.
-    --
-    -- Hide it now and once more on the next frame.
+    -- event and may create LOOT_BIND after us.
     --------------------------------------------------
 
     if StaticPopup_Hide then

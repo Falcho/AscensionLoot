@@ -2263,11 +2263,11 @@ function UI:CreateSettingsPanel(panel)
     )
 
     addCheckbox(
-        "Auto-loot all Master Loot to me",
+        "Assign all loot to me",
         "autoMasterLootToSelf",
         18,
         -171,
-        "During auto-loot, assigns every Master Loot item directly to the current Master Looter."
+        "When you are the Master Looter, automatically assigns all Master-Looter-controlled loot directly to you."
     )
 
     addCheckbox(

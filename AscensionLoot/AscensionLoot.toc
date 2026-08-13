@@ -16,6 +16,7 @@ RollManager.lua
 RollSync.lua
 LootManager.lua
 BagHooks.lua
+LootHooks.lua
 UI.lua
 PlayerRollUI.lua
 MinimapButton.lua

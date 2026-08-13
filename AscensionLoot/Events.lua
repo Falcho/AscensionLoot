@@ -37,6 +37,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if AL.BagHooks then
             AL.BagHooks:Initialize()
         end
+        if AL.LootHooks then
+            AL.LootHooks:
+                Initialize()
+        end
         if AL.MinimapButton then
             AL.MinimapButton:Initialize()
         end
