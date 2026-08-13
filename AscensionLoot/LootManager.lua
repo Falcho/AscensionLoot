@@ -194,26 +194,11 @@ function Loot:OnClosed()
         self.collectionQueue
         or {}
     ) do
-        if action.expectationCreated
-            and AL:NormalizeName(
-                action.holder
+        self:
+            CancelCollectionActionExpectation(
+                action
             )
-                == AL:NormalizeName(
-                    UnitName("player")
-                )
-            and AL.BagHooks
-            and AL.BagHooks
-                .ConsumeMasterLootExpectation
-        then
-            AL.BagHooks:
-                ConsumeMasterLootExpectation(
-                    action.item.id,
-                    action.item.quantity
-                        or 1
-                )
-        end
     end
-
     self.isOpen = false
     self.autoLooting = false
 
@@ -1092,23 +1077,28 @@ function Loot:ClearPendingHandout(
     end
 end
 
-function Loot:CancelCollectionExpectation(
-    pending
+function Loot:CancelCollectionActionExpectation(
+    action
 )
-    if not pending
-        or not pending.action
+    if not action
+        or not action.expectationCreated
     then
         return
     end
 
-    local action =
-        pending.action
+    local holder =
+        action.holder
+        or self:GetHolderName()
 
-    if not action.expectationCreated then
-        return
-    end
+    local holderIsPlayer =
+        AL:NormalizeName(
+            holder
+        )
+        == AL:NormalizeName(
+            UnitName("player")
+        )
 
-    if pending.holderIsPlayer
+    if holderIsPlayer
         and AL.BagHooks
         and AL.BagHooks
             .ConsumeMasterLootExpectation
@@ -1123,6 +1113,21 @@ function Loot:CancelCollectionExpectation(
 
     action.expectationCreated =
         nil
+end
+
+function Loot:CancelCollectionExpectation(
+    pending
+)
+    if not pending
+        or not pending.action
+    then
+        return
+    end
+
+    self:
+        CancelCollectionActionExpectation(
+            pending.action
+        )
 end
 
 function Loot:CompletePendingHandout(
@@ -1431,11 +1436,64 @@ function Loot:ProcessAutoQueue()
                 )
 
         if not currentSlot then
+            local previousAttempts =
+                tonumber(
+                    action.attempts
+                )
+                or 0
+
             --------------------------------------------------
-            -- The item no longer exists on the corpse.
-            -- Another addon or a manual action probably
-            -- handled it.
+            -- If we already attempted GiveMasterLoot, the
+            -- disappearing slot most likely means that the
+            -- previous handout completed late.
             --------------------------------------------------
+
+            if previousAttempts > 0 then
+                local holder =
+                    action.holder
+                    or self:GetHolderName()
+
+                local lateSuccess = {
+                    action =
+                        action,
+
+                    slot =
+                        action.slot,
+
+                    item =
+                        action.item,
+
+                    holder =
+                        holder,
+
+                    holderIsPlayer =
+                        AL:NormalizeName(
+                            holder
+                        )
+                        == AL:NormalizeName(
+                            UnitName("player")
+                        ),
+                }
+
+                self:
+                    CompletePendingHandout(
+                        lateSuccess
+                    )
+
+                self:Refresh()
+
+                return
+            end
+
+            --------------------------------------------------
+            -- No GiveMasterLoot attempt was ever made.
+            -- Something else removed the item.
+            --------------------------------------------------
+
+            self:
+                CancelCollectionActionExpectation(
+                    action
+                )
 
             self:
                 RemoveCollectionAction(
@@ -1505,6 +1563,10 @@ function Loot:ProcessAutoQueue()
             if action.candidateMisses
                 >= 6
             then
+                self:
+                    CancelCollectionActionExpectation(
+                        action
+                    )
                 self:
                     RemoveCollectionAction(
                         action
