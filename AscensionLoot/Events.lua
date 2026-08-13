@@ -141,6 +141,9 @@ eventFrame:SetScript(
         if AL.SoftReserve then
             AL.SoftReserve:OnUpdate()
         end
+        if AL.Trade then
+            AL.Trade:OnUpdate(elapsed)
+        end
     end
 )
 

@@ -51,6 +51,7 @@ Loot.autoQueue = {}
 Loot.collectionQueue = {}
 Loot.pendingCollection = nil
 Loot.pendingMasterLoot = nil
+Loot.hideBindPopupOnUpdate = false
 
 -- Tracked Master Loot items waiting to be physically
 -- confirmed in this client's bags before auto-opening
@@ -90,18 +91,22 @@ local function lootSlotItem(slot)
 end
 
 function Loot:IsMasterLooter()
-    local method, partyMaster, raidMaster = GetLootMethod()
-    if method ~= "master" then return false end
+    local method,
+        lootMaster =
+            GetLootMethod()
 
-    if AL:IsInRaid() then
-        if UnitInRaid then
-            local playerIndex = UnitInRaid("player")
-            if playerIndex and raidMaster then return playerIndex == raidMaster end
-        end
-        return raidMaster == nil or raidMaster == 0
+    if method ~= "master" then
+        return false
     end
 
-    return partyMaster == 0 or partyMaster == nil
+    --------------------------------------------------
+    -- WoW 3.3.5 uses 0 for the local player.
+    --
+    -- This is also how Blizzard's own PlayerFrame
+    -- determines whether the player is Master Looter.
+    --------------------------------------------------
+
+    return lootMaster == 0
 end
 
 function Loot:GetHolderName()
@@ -170,6 +175,7 @@ function Loot:OnClosed()
 
     self.pendingCollection = nil
     self.pendingMasterLoot = nil
+    self.hideBindPopupOnUpdate = false
 
     if not self.demo then
         self.items = {}
@@ -399,9 +405,11 @@ function Loot:OnSlotCleared(slot)
     self:Refresh()
 end
 
-function Loot:OnBindConfirm(slot)
-    if AL.db.settings
-        .autoConfirmMasterLootToSelf == false
+function Loot:OnBindConfirm(
+    slot
+)
+    if not AL.db.settings
+        .autoConfirmMasterLootToSelf
     then
         return
     end
@@ -418,7 +426,38 @@ function Loot:OnBindConfirm(slot)
         return
     end
 
-    ConfirmLootSlot(slot)
+    --------------------------------------------------
+    -- Never confirm somebody else's loot warning.
+    --------------------------------------------------
+
+    if not pending.holderIsPlayer then
+        return
+    end
+
+    --------------------------------------------------
+    -- Accept the server-side Bind-on-Pickup warning.
+    --------------------------------------------------
+
+    ConfirmLootSlot(
+        slot
+    )
+
+    --------------------------------------------------
+    -- UIParent handles the same LOOT_BIND_CONFIRM
+    -- event and may display LOOT_BIND after our event
+    -- handler has already confirmed it.
+    --
+    -- Hide it now and once more on the next frame.
+    --------------------------------------------------
+
+    if StaticPopup_Hide then
+        StaticPopup_Hide(
+            "LOOT_BIND"
+        )
+    end
+
+    self.hideBindPopupOnUpdate =
+        true
 end
 
 function Loot:AssignHeldItem(item, playerName, reason)
@@ -810,8 +849,8 @@ function Loot:BuildCollectionQueue()
     local settings = AL.db.settings
 
     local assignEverythingToSelf =
-        self.autoLooting
-        and settings.autoMasterLootToSelf
+        settings.autoMasterLootToSelf
+            == true
 
     local collectTrackedLoot =
         settings.autoCollectTrackedLoot
@@ -866,8 +905,7 @@ function Loot:BuildAutoQueue()
         GetTime() + 0.25
 
     local masterLootHandlesAllItems =
-        self.autoLooting
-        and self:IsMasterLooter()
+        self:IsMasterLooter()
         and AL.db.settings.autoMasterLootToSelf
 
     for slot = GetNumLootItems(), 1, -1 do
@@ -1179,6 +1217,9 @@ function Loot:ProcessAutoQueue()
 
                 holder =
                     holder,
+
+                holderIsPlayer =
+                    holderIsPlayer,
             }
         end
 
@@ -1282,6 +1323,22 @@ function Loot:ProcessAutoQueue()
 end
 
 function Loot:OnUpdate()
+    --------------------------------------------------
+    -- UIParent may create LOOT_BIND later during the
+    -- same LOOT_BIND_CONFIRM event dispatch.
+    --------------------------------------------------
+
+    if self.hideBindPopupOnUpdate then
+        self.hideBindPopupOnUpdate =
+            false
+
+        if StaticPopup_Hide then
+            StaticPopup_Hide(
+                "LOOT_BIND"
+            )
+        end
+    end
+
     self:ProcessAutoQueue()
 end
 

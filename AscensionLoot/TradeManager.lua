@@ -5,11 +5,26 @@ local Trade = AL.Trade
 
 Trade.requestedEntry = nil
 Trade.requestedWinner = nil
+Trade.requestedAt = nil
+
 Trade.tradeTarget = nil
 Trade.tradeOpen = false
 Trade.tradeCompleted = false
+
 Trade.filledEntries = {}
 Trade.pendingVerification = nil
+
+Trade.retryElapsed = 0
+Trade.pendingFillTarget = nil
+
+local AUTO_TRADE_RETRY_INTERVAL =
+    0.75
+
+local TRADE_REQUEST_TIMEOUT =
+    3.0
+
+local TRADE_FILL_DELAY =
+    0.25
 
 local function samePlayer(left, right)
     if not left or not right then
@@ -241,10 +256,9 @@ function Trade:TryStart(entry)
 
     self.requestedEntry = entry
     self.requestedWinner = entry.winner
-
+    self.requestedAt = GetTime()
     entry.tradeStatus = "trade_requested"
     entry.tradeError = nil
-
     InitiateTrade(unit)
 
     if AL.UI then
@@ -463,9 +477,86 @@ function Trade:FillTradeWindow(playerName)
     end
 end
 
+--------------------------------------------------
+-- Delayed trade-window filling
+--------------------------------------------------
+
+function Trade:ScheduleFillTradeWindow(
+    playerName
+)
+    if not AL.db.settings
+        .autoFillTrade
+    then
+        return
+    end
+
+    self.pendingFillTarget =
+        playerName
+
+    if not self.fillFrame then
+        local frame =
+            CreateFrame("Frame")
+
+        frame:Hide()
+
+        frame:SetScript(
+            "OnUpdate",
+            function(self, elapsed)
+                self.elapsed =
+                    (self.elapsed or 0)
+                    + elapsed
+
+                if self.elapsed
+                    < TRADE_FILL_DELAY
+                then
+                    return
+                end
+
+                self.elapsed = 0
+                self:Hide()
+
+                local target =
+                    Trade.pendingFillTarget
+
+                Trade.pendingFillTarget =
+                    nil
+
+                if not target then
+                    return
+                end
+
+                if not Trade.tradeOpen then
+                    return
+                end
+
+                if TradeFrame
+                    and not TradeFrame:
+                        IsShown()
+                then
+                    return
+                end
+
+                Trade:
+                    FillTradeWindow(
+                        target
+                    )
+            end
+        )
+
+        self.fillFrame =
+            frame
+    end
+
+    self.fillFrame.elapsed =
+        0
+
+    self.fillFrame:Show()
+end
+
 function Trade:OnTradeShow()
     self.tradeOpen = true
     self.tradeCompleted = false
+    self.requestedAt = nil
     self.tradeTarget = self:GetTradeTarget()
 
     if not self.tradeTarget then
@@ -499,7 +590,7 @@ function Trade:OnTradeShow()
         return
     end
 
-    self:FillTradeWindow(self.tradeTarget)
+    self:ScheduleFillTradeWindow(self.tradeTarget)
 end
 
 function Trade:OnUIInfoMessage(...)
@@ -526,7 +617,7 @@ function Trade:StartVerificationTimer()
         frame:SetScript("OnUpdate", function(self, elapsed)
             self.elapsed = (self.elapsed or 0) + elapsed
 
-            if self.elapsed >= 0.4 then
+            if self.elapsed >= 1.0 then
                 self.elapsed = 0
                 self:Hide()
 
@@ -620,10 +711,17 @@ end
 
 function Trade:OnTradeClosed()
     self.tradeOpen = false
+    self.pendingFillTarget = nil
+
+if self.fillFrame then
+    self.fillFrame:Hide()
+    self.fillFrame.elapsed = 0
+end
 
     if #self.filledEntries == 0 then
         self.requestedEntry = nil
         self.requestedWinner = nil
+        self.requestedAt = nil
         self.tradeTarget = nil
         return
     end
@@ -693,6 +791,7 @@ function Trade:VerifyClosedTrade()
     self.tradeCompleted = false
     self.requestedEntry = nil
     self.requestedWinner = nil
+    self.requestedAt = nil
     self.tradeTarget = nil
 
     if AL.UI then
@@ -724,4 +823,167 @@ function Trade:OnCombatEnded()
     then
         self:TryStart(entry)
     end
+end
+
+--------------------------------------------------
+-- Retry queued automatic trades
+--------------------------------------------------
+
+function Trade:OnUpdate(
+    elapsed
+)
+    if not AL.db
+        or not AL.db.settings
+        or not AL.db.settings
+            .autoOpenTrade
+    then
+        self.retryElapsed = 0
+        return
+    end
+
+    --------------------------------------------------
+    -- Never interfere with an active trade.
+    --------------------------------------------------
+
+    if self.tradeOpen
+        or (
+            TradeFrame
+            and TradeFrame:
+                IsShown()
+        )
+    then
+        self.retryElapsed = 0
+        return
+    end
+
+    --------------------------------------------------
+    -- A trade request was sent but no TRADE_SHOW
+    -- arrived.
+    --
+    -- Don't spam the winner with repeated requests.
+    -- Mark it as failed and leave it for a manual
+    -- retry.
+    --------------------------------------------------
+
+    if self.requestedEntry then
+        local requestedAt =
+            tonumber(
+                self.requestedAt
+            )
+            or GetTime()
+
+        if GetTime()
+            - requestedAt
+            < TRADE_REQUEST_TIMEOUT
+        then
+            return
+        end
+
+        self.requestedEntry
+            .tradeStatus =
+                "trade_request_failed"
+
+        self.requestedEntry
+            .tradeError =
+                "The trade window did not open."
+
+        self.requestedEntry =
+            nil
+
+        self.requestedWinner =
+            nil
+
+        self.requestedAt =
+            nil
+
+        if AL.UI then
+            AL.UI:RefreshAll()
+        end
+
+        return
+    end
+
+    self.retryElapsed =
+        (self.retryElapsed or 0)
+        + (elapsed or 0)
+
+    if self.retryElapsed
+        < AUTO_TRADE_RETRY_INTERVAL
+    then
+        return
+    end
+
+    self.retryElapsed = 0
+
+    local entry =
+        self:GetNextPendingEntry()
+
+    if not entry then
+        return
+    end
+
+    --------------------------------------------------
+    -- Only automatically retry states that simply
+    -- mean "not ready yet".
+    --
+    -- A cancelled trade or actual item failure must
+    -- not continually reopen a trade window.
+    --------------------------------------------------
+
+    local status =
+        entry.tradeStatus
+
+    if status ~= "queued"
+        and status
+            ~= "waiting_for_player"
+        and status
+            ~= "waiting_for_range"
+        and status
+            ~= "waiting_for_combat"
+    then
+        return
+    end
+
+    if InCombatLockdown
+        and InCombatLockdown()
+    then
+        entry.tradeStatus =
+            "waiting_for_combat"
+
+        return
+    end
+
+    local unit =
+        self:
+            FindUnitByName(
+                entry.winner
+            )
+
+    if not unit then
+        entry.tradeStatus =
+            "waiting_for_player"
+
+        return
+    end
+
+    if unit ~= "player"
+        and not self:
+            IsUnitInTradeRange(
+                unit
+            )
+    then
+        entry.tradeStatus =
+            "waiting_for_range"
+
+        return
+    end
+
+    --------------------------------------------------
+    -- The winner is now available and in range.
+    --------------------------------------------------
+
+    self:
+        TryStart(
+            entry
+        )
 end
