@@ -158,18 +158,7 @@ function LootHooks:HandleLootClick(
     return true
 end
 
---------------------------------------------------
--- Installation
---------------------------------------------------
-
-function LootHooks:Initialize()
-    if self.initialized then
-        return
-    end
-
-    self.initialized =
-        true
-
+function LootHooks:EnsureHooks()
     local buttonCount =
         LOOTFRAME_NUMBUTTONS
         or 4
@@ -190,51 +179,90 @@ function LootHooks:Initialize()
             and button.GetScript
             and button.SetScript
         then
-            local original =
-                button:
-                    GetScript(
-                        "OnClick"
-                    )
-
-            self.originalClickScripts[
-                button
-            ] =
-                original
-
-            button:SetScript(
-                "OnClick",
-                function(
-                    clickedButton,
-                    mouseButton
+            local currentScript =
+                button:GetScript(
+                    "OnClick"
                 )
-                    if LootHooks:
-                        HandleLootClick(
-                            clickedButton,
-                            mouseButton
-                        )
-                    then
-                        return
+
+            local currentWrapper =
+                self.buttonWrappers[
+                    button
+                ]
+
+            --------------------------------------------------
+            -- Our current wrapper is still installed.
+            --------------------------------------------------
+
+            if currentScript
+                == currentWrapper
+            then
+                installed =
+                    installed + 1
+
+            else
+                --------------------------------------------------
+                -- Something else owns the button right now.
+                --
+                -- Preserve its current behaviour and place our
+                -- live-roll interception in front of it.
+                --------------------------------------------------
+
+                local originalScript =
+                    currentScript
+
+                local wrapper
+
+                wrapper =
+                    function(
+                        clickedButton,
+                        mouseButton
+                    )
+                        if LootHooks:
+                            HandleLootClick(
+                                clickedButton,
+                                mouseButton
+                            )
+                        then
+                            return
+                        end
+
+                        if originalScript then
+                            return originalScript(
+                                clickedButton,
+                                mouseButton
+                            )
+                        end
                     end
 
-                    local originalClick =
-                        LootHooks
-                            .originalClickScripts[
-                                clickedButton
-                            ]
+                self.buttonWrappers[
+                    button
+                ] =
+                    wrapper
 
-                    if originalClick then
-                        return originalClick(
-                            clickedButton,
-                            mouseButton
-                        )
-                    end
-                end
-            )
+                button:SetScript(
+                    "OnClick",
+                    wrapper
+                )
 
-            installed =
-                installed + 1
+                installed =
+                    installed + 1
+            end
         end
     end
+
+    return installed
+end
+
+function LootHooks:Initialize()
+    if self.initialized then
+        return
+    end
+
+    self.initialized =
+        true
+
+    local installed =
+        self:EnsureHooks()
 
     if installed == 0 then
         AL:Print(

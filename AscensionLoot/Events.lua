@@ -51,6 +51,21 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 .. ". Type /al for the loot frame."
         )
     elseif event == "LOOT_OPENED" then
+        --------------------------------------------------
+        -- Ascension or another addon may have replaced
+        -- the stock LootButton click handlers since login.
+        --
+        -- Reassert our live-roll interception whenever
+        -- a fresh loot window opens.
+        --------------------------------------------------
+
+        if AL.LootHooks
+            and AL.LootHooks.EnsureHooks
+        then
+            AL.LootHooks:
+                EnsureHooks()
+        end
+
         local autoLoot =
             select(1, ...)
 

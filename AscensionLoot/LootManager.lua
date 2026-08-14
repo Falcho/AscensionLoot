@@ -490,8 +490,16 @@ function Loot:FindCandidateIndex(
         return nil
     end
 
-    local maximumCandidates =
-        40
+    --------------------------------------------------
+    -- WoW 3.3.5:
+    --
+    -- GetMasterLootCandidate takes ONE argument:
+    -- the candidate index.
+    --
+    -- GiveMasterLoot then uses that same index.
+    --------------------------------------------------
+
+    local maximumCandidates
 
     local raidCount =
         GetNumRaidMembers
@@ -499,33 +507,30 @@ function Loot:FindCandidateIndex(
         or 0
 
     if raidCount > 0 then
-        maximumCandidates =
-            raidCount
+        --------------------------------------------------
+        -- Blizzard's 3.3.5 Master Loot menu scans all
+        -- 40 raid candidate positions.
+        --------------------------------------------------
+
+        maximumCandidates = 40
     else
-        local partyCount =
-            GetNumPartyMembers
-            and GetNumPartyMembers()
-            or 0
+        --------------------------------------------------
+        -- Party candidate positions are always the
+        -- four party slots + the local player.
+        --
+        -- Do NOT use GetNumPartyMembers() + 1 here.
+        --------------------------------------------------
 
         maximumCandidates =
-            math.max(
-                1,
-                partyCount + 1
-            )
+            (MAX_PARTY_MEMBERS or 4)
+            + 1
     end
-
-    --------------------------------------------------
-    -- Candidate indexes may contain gaps.
-    --
-    -- A nil candidate must NOT terminate the scan.
-    --------------------------------------------------
 
     for index = 1,
         maximumCandidates
     do
         local candidate =
             GetMasterLootCandidate(
-                slot,
                 index
             )
 
