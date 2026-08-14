@@ -974,6 +974,28 @@ function Loot:AwardActiveWinners(item)
         return
     end
 
+    --------------------------------------------------
+    -- Live boss-loot rolls must always award the
+    -- physical corpse item.
+    --
+    -- Do this BEFORE looking in LootSession. An older
+    -- unassigned copy of the same item may already be
+    -- in our bags and must not steal this assignment.
+    --------------------------------------------------
+
+    if item.source == "loot" then
+        local winner =
+            winners[1]
+
+        self:Award(
+            item,
+            winner.name,
+            winner.categoryLabel
+        )
+
+        return
+    end
+
     local copies = {}
 
     if AL.LootSession
@@ -987,22 +1009,6 @@ function Loot:AwardActiveWinners(item)
     end
 
     if #copies == 0 then
-        --------------------------------------------------
-        -- Live corpse loot can still be awarded through
-        -- the normal Master Loot path.
-        --------------------------------------------------
-
-        if item.source == "loot"
-            and winners[1]
-        then
-            self:Award(
-                item,
-                winners[1].name,
-                winners[1].categoryLabel
-            )
-
-            return
-        end
 
         --------------------------------------------------
         -- An ordinary bag item may have been manually

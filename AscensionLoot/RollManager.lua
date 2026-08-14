@@ -116,12 +116,22 @@ function Roll:GetAvailableCopyCount(
     end
 
     --------------------------------------------------
-    -- Persistent tracked copies are authoritative.
+    -- Live corpse loot is one award operation.
     --
-    -- Example:
-    --   2 identical raid drops
-    --   = 2 LootSession entries
-    --   = one roll with 2 winners.
+    -- Do NOT let older unassigned LootSession copies
+    -- of the same item affect this roll.
+    --
+    -- Even if a loot slot contains a stack, Master
+    -- Loot awards that slot to one recipient.
+    --------------------------------------------------
+
+    if item.source == "loot" then
+        return 1
+    end
+
+    --------------------------------------------------
+    -- Persistent collected copies are authoritative
+    -- for items already held by the loot holder.
     --------------------------------------------------
 
     if AL.LootSession
@@ -141,24 +151,7 @@ function Roll:GetAvailableCopyCount(
     end
 
     --------------------------------------------------
-    -- A live corpse loot slot can legitimately contain
-    -- more than one physical copy.
-    --------------------------------------------------
-
-    if item.source == "loot" then
-        return math.max(
-            1,
-            tonumber(
-                item.quantity
-            ) or 1
-        )
-    end
-
-    --------------------------------------------------
-    -- Bag stack quantity is NOT winner count.
-    --
-    -- Alt-clicking a stack of crafting materials
-    -- manually starts one roll with one winner.
+    -- Ordinary bag items represent one manual roll.
     --------------------------------------------------
 
     return 1
