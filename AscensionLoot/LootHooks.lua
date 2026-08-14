@@ -10,8 +10,8 @@ local LootHooks =
 LootHooks.initialized =
     false
 
-LootHooks.originalClickScripts =
-    LootHooks.originalClickScripts
+LootHooks.buttonWrappers =
+    LootHooks.buttonWrappers
     or {}
 
 --------------------------------------------------
