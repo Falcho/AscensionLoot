@@ -2201,62 +2201,22 @@ function Loot:ProcessAutoQueue()
         return
     end
 
+    LootSlot(
+        currentSlot
+    )
     --------------------------------------------------
-    -- Item slots are resolved again because earlier
-    -- Master Loot operations may have changed the
-    -- corpse state.
+    -- Below-threshold BoP loot may still require a
+    -- normal confirmation on this client.
     --------------------------------------------------
 
-    local currentSlot =
-        self:
-            FindCurrentItemSlot(
-                action.itemID,
-                action.slot
-            )
-
-    if not currentSlot then
-        return
-    end
-
-    local currentItem =
-        lootSlotItem(
-            currentSlot
-        )
-
-    if not self:
-        ShouldAutoLoot(
-            currentItem
-        )
+    if GetLootMethod()
+            == "master"
+        and self:IsMasterLooter()
+        and AL.db.settings
+            .autoConfirmMasterLootToSelf
+        and ConfirmLootSlot
     then
-        return
-    end
-
-    local method =
-        GetLootMethod()
-
-    if method == "master" then
-        if not self:IsMasterLooter() then
-            return
-        end
-
-        local me =
-            UnitName("player")
-
-        local candidateIndex =
-            self:
-                FindCandidateIndex(
-                    currentSlot,
-                    me
-                )
-
-        if candidateIndex then
-            GiveMasterLoot(
-                currentSlot,
-                candidateIndex
-            )
-        end
-    else
-        LootSlot(
+        ConfirmLootSlot(
             currentSlot
         )
     end
