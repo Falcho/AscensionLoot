@@ -522,6 +522,24 @@ function BagHooks:ScanForNewEligibleItems()
         return
     end
 
+    local lootMethod =
+        GetLootMethod
+        and GetLootMethod()
+
+    if lootMethod == "master" then
+        self.bagSnapshot =
+            currentSnapshot
+
+        --------------------------------------------------
+        -- Any retry state from an older implementation or
+        -- previous non-Master-Loot scan is irrelevant now.
+        --------------------------------------------------
+
+        self.retryUntil = {}
+
+        return
+    end
+
     local previousSnapshot =
         self.bagSnapshot
         or {}

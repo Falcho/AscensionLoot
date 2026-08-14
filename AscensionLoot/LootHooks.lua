@@ -10,8 +10,8 @@ local LootHooks =
 LootHooks.initialized =
     false
 
-LootHooks.elvHookedButtons =
-    LootHooks.elvHookedButtons
+LootHooks.elvButtonWrappers =
+    LootHooks.elvButtonWrappers
     or {}
 --------------------------------------------------
 -- Modifier detection
@@ -298,41 +298,88 @@ function LootHooks:HookElvUILootSlots()
             ]
 
         if button
-            and button.HookScript
-            and not self
-                .elvHookedButtons[
+            and button.GetScript
+            and button.SetScript
+        then
+            local currentScript =
+                button:
+                    GetScript(
+                        "OnClick"
+                    )
+
+            local currentWrapper =
+                self.elvButtonWrappers[
                     button
                 ]
-        then
+
             --------------------------------------------------
-            -- ElvUI's custom loot frame stores the actual
-            -- corpse loot slot in the button's frame ID.
+            -- Our wrapper is already the current handler.
             --------------------------------------------------
 
-            button:HookScript(
-                "OnClick",
-                function(
-                    clickedButton,
-                    mouseButton
-                )
-                    LootHooks:
-                        HandleLiveLootSlot(
-                            clickedButton:
-                                GetID(),
+            if currentScript
+                ~= currentWrapper
+            then
+                --------------------------------------------------
+                -- Preserve whatever ElvUI currently owns.
+                --
+                -- AscensionLoot goes first so plain Alt can be
+                -- consumed BEFORE ElvUI changes the loot slot.
+                --------------------------------------------------
+
+                local originalScript =
+                    currentScript
+
+                local wrapper
+
+                wrapper =
+                    function(
+                        clickedButton,
+                        mouseButton
+                    )
+                        local actualButton =
                             mouseButton
-                                or (
-                                    GetMouseButtonClicked
-                                    and GetMouseButtonClicked()
-                                )
-                                or "LeftButton"
-                        )
-                end
-            )
+                            or (
+                                GetMouseButtonClicked
+                                and GetMouseButtonClicked()
+                            )
+                            or "LeftButton"
 
-            self.elvHookedButtons[
-                button
-            ] =
-                true
+                        local handled =
+                            LootHooks:
+                                HandleLiveLootSlot(
+                                    clickedButton:
+                                        GetID(),
+                                    actualButton
+                                )
+
+                        if handled then
+                            return
+                        end
+
+                        --------------------------------------------------
+                        -- Ordinary clicks, Ctrl+Alt, Shift+Alt, etc.
+                        -- continue through ElvUI normally.
+                        --------------------------------------------------
+
+                        if originalScript then
+                            return originalScript(
+                                clickedButton,
+                                mouseButton
+                            )
+                        end
+                    end
+
+                self.elvButtonWrappers[
+                    button
+                ] =
+                    wrapper
+
+                button:
+                    SetScript(
+                        "OnClick",
+                        wrapper
+                    )
+            end
         end
     end
 end

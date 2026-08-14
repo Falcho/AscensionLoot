@@ -1186,7 +1186,12 @@ function Loot:BuildCollectionQueue()
                 slot
             )
 
-        if item then
+        if item
+            and self:
+                IsMasterLootControlled(
+                    item
+                )
+        then
             table.insert(
                 self.collectionQueue,
                 {
@@ -1217,36 +1222,55 @@ function Loot:BuildAutoQueue()
         GetTime() + 0.25
 
     local isMasterLooter =
-        self:IsMasterLooter()
+        self:
+            IsMasterLooter()
 
-    local assignAllToSelf =
-        isMasterLooter
-        and AL.db.settings
-            .autoMasterLootToSelf
-
-    local liveLootMode =
-        isMasterLooter
-        and not AL.db.settings
-            .autoMasterLootToSelf
-
-    for slot = GetNumLootItems(), 1, -1 do
+    for slot =
+        GetNumLootItems(),
+        1,
+        -1
+    do
         local link =
-            GetLootSlotLink(slot)
+            GetLootSlotLink(
+                slot
+            )
 
         if link then
-            --------------------------------------------------
-            -- Master Looter live-roll mode:
-            --
-            -- Leave ALL items on the corpse.
-            --------------------------------------------------
+            local item =
+                lootSlotItem(
+                    slot
+                )
 
-            if not assignAllToSelf
-                and not liveLootMode
-            then
-                local item =
-                    lootSlotItem(slot)
+            if item then
+                --------------------------------------------------
+                -- When we are Master Looter, items at/above
+                -- the Master Loot threshold belong exclusively
+                -- to the Master Loot workflow:
+                --
+                -- Assign ON  → collectionQueue
+                -- Assign OFF → remain for live Alt-click rolls
+                --
+                -- Never ordinary-autoloot those items.
+                --------------------------------------------------
 
-                if self:ShouldAutoLoot(item) then
+                local masterLootControlled =
+                    isMasterLooter
+                    and self:
+                        IsMasterLootControlled(
+                            item
+                        )
+
+                --------------------------------------------------
+                -- Below-threshold items always obey the
+                -- Ordinary Autoloot settings.
+                --------------------------------------------------
+
+                if not masterLootControlled
+                    and self:
+                        ShouldAutoLoot(
+                            item
+                        )
+                then
                     table.insert(
                         self.autoQueue,
                         {
@@ -1258,9 +1282,14 @@ function Loot:BuildAutoQueue()
                 end
             end
 
-        elseif AL.db.settings.autoLootCoins then
-            local _, name =
-                GetLootSlotInfo(slot)
+        elseif AL.db.settings
+            .autoLootCoins
+        then
+            local _,
+                name =
+                    GetLootSlotInfo(
+                        slot
+                    )
 
             if name then
                 table.insert(
@@ -1526,6 +1555,73 @@ function Loot:CompletePendingHandout(
         or not action.trackInSession
     then
         return
+    end
+
+    local copies =
+        tonumber(
+            action.item.quantity
+        )
+        or 1
+
+    copies =
+        math.max(
+            1,
+            math.floor(
+                copies
+            )
+        )
+
+    local collectedItem =
+        AL:ShallowCopy(
+            action.item
+        )
+
+    collectedItem.registrationSource =
+        pending.holderIsPlayer
+        and "master_loot_self"
+        or "master_loot_remote"
+
+    AL.LootSession:
+        AddCollectedCopies(
+            collectedItem,
+            pending.holder,
+            copies
+        )
+
+    if pending.holderIsPlayer then
+        AL:Print(
+            string.format(
+                "Collected %d %s of %s.",
+                copies,
+                copies == 1
+                    and "copy"
+                    or "copies",
+                action.item.link
+                    or action.item.name
+                    or "tracked item"
+            )
+        )
+    else
+        AL:Print(
+            string.format(
+                "Collected %d %s of %s for %s.",
+                copies,
+                copies == 1
+                    and "copy"
+                    or "copies",
+                action.item.link
+                    or action.item.name
+                    or "tracked item",
+                pending.holder
+                    or "Unknown"
+            )
+        )
+    end
+
+    if AL.db.settings.autoShowLoot
+        and AL.UI
+    then
+        AL.UI:ShowLoot()
     end
 end
 
