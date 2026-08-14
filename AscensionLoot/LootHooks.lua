@@ -10,23 +10,11 @@ local LootHooks =
 LootHooks.initialized =
     false
 
-LootHooks.buttonWrappers =
-    LootHooks.buttonWrappers
-    or {}
-
 --------------------------------------------------
 -- Modifier detection
 --------------------------------------------------
 
-function LootHooks:IsRollClick(
-    mouseButton
-)
-    if mouseButton
-        ~= "LeftButton"
-    then
-        return false
-    end
-
+function LootHooks:IsLiveRollModifier()
     if not IsAltKeyDown() then
         return false
     end
@@ -34,8 +22,11 @@ function LootHooks:IsRollClick(
     --------------------------------------------------
     -- Plain Alt only.
     --
-    -- Preserve other modified-click behaviour from
-    -- WoW / Ascension.
+    -- Ctrl+Alt must remain available for Ascension's
+    -- transmog handling.
+    --
+    -- Shift+Alt is reserved by AscensionLoot for
+    -- direct assignment elsewhere.
     --------------------------------------------------
 
     if IsControlKeyDown()
@@ -48,57 +39,124 @@ function LootHooks:IsRollClick(
 end
 
 --------------------------------------------------
--- Live loot Alt-click
+-- Resolve the live corpse slot from the item link
 --------------------------------------------------
 
-function LootHooks:HandleLootClick(
-    button,
+function LootHooks:FindLiveLootSlot(
+    itemLink
+)
+    if not AL.Loot
+        or not AL.Loot.isOpen
+        or not itemLink
+    then
+        return nil
+    end
+
+    local wantedID =
+        AL:GetItemID(
+            itemLink
+        )
+
+    if not wantedID then
+        return nil
+    end
+
+    local focus =
+        GetMouseFocus
+        and GetMouseFocus()
+        or nil
+
+    local focusedSlot =
+        focus
+        and focus.slot
+        or nil
+
+    if focusedSlot then
+        local focusedLink =
+            GetLootSlotLink(
+                focusedSlot
+            )
+
+        if focusedLink
+            and AL:GetItemID(
+                focusedLink
+            ) == wantedID
+        then
+            return focusedSlot
+        end
+    end
+
+    --------------------------------------------------
+    -- Fallback:
+    -- Scan the live loot window for the clicked item.
+    --------------------------------------------------
+
+    for slot = 1,
+        GetNumLootItems()
+    do
+        local liveLink =
+            GetLootSlotLink(
+                slot
+            )
+
+        if liveLink
+            and AL:GetItemID(
+                liveLink
+            ) == wantedID
+        then
+            return slot
+        end
+    end
+
+    return nil
+end
+
+--------------------------------------------------
+-- Global modified-item click handler
+--------------------------------------------------
+
+function LootHooks:HandleModifiedItemClick(
+    itemLink,
     mouseButton
 )
     if not self:
-        IsRollClick(
-            mouseButton
-        )
+        IsLiveRollModifier()
     then
-        return false
+        return
     end
+
+    if mouseButton
+        and mouseButton
+            ~= "LeftButton"
+    then
+        return
+    end
+
+    --------------------------------------------------
+    -- Only turn this into a live boss-loot roll while
+    -- an actual loot window is open.
+    --
+    -- BagHooks continues to own ordinary bag items.
+    --------------------------------------------------
 
     if not AL.Loot
         or not AL.Loot.isOpen
     then
-        return false
+        return
     end
 
     local slot =
-        button
-        and button.slot
+        self:
+            FindLiveLootSlot(
+                itemLink
+            )
 
     if not slot then
-        return false
+        return
     end
 
     --------------------------------------------------
-    -- Only intercept actual item slots.
-    --------------------------------------------------
-
-    if LootSlotIsItem
-        and not LootSlotIsItem(
-            slot
-        )
-    then
-        return false
-    end
-
-    if not GetLootSlotLink(
-        slot
-    )
-    then
-        return false
-    end
-
-    --------------------------------------------------
-    -- Never replace an existing active roll by
-    -- accidentally Alt-clicking another boss item.
+    -- Never overwrite an active roll.
     --------------------------------------------------
 
     if AL.Roll
@@ -112,7 +170,7 @@ function LootHooks:HandleLootClick(
             0.2
         )
 
-        return true
+        return
     end
 
     local item,
@@ -132,13 +190,7 @@ function LootHooks:HandleLootClick(
             0.2
         )
 
-        --------------------------------------------------
-        -- This was still an intentional Alt-click.
-        -- Do not fall through into Blizzard's normal
-        -- modified-click handler.
-        --------------------------------------------------
-
-        return true
+        return
     end
 
     local started =
@@ -148,110 +200,17 @@ function LootHooks:HandleLootClick(
             )
 
     if not started then
-        return true
+        return
     end
 
     if AL.UI then
         AL.UI:ShowLoot()
     end
-
-    return true
 end
 
-function LootHooks:EnsureHooks()
-    local buttonCount =
-        LOOTFRAME_NUMBUTTONS
-        or 4
-
-    local installed =
-        0
-
-    for index = 1,
-        buttonCount
-    do
-        local button =
-            _G[
-                "LootButton"
-                .. tostring(index)
-            ]
-
-        if button
-            and button.GetScript
-            and button.SetScript
-        then
-            local currentScript =
-                button:GetScript(
-                    "OnClick"
-                )
-
-            local currentWrapper =
-                self.buttonWrappers[
-                    button
-                ]
-
-            --------------------------------------------------
-            -- Our current wrapper is still installed.
-            --------------------------------------------------
-
-            if currentScript
-                == currentWrapper
-            then
-                installed =
-                    installed + 1
-
-            else
-                --------------------------------------------------
-                -- Something else owns the button right now.
-                --
-                -- Preserve its current behaviour and place our
-                -- live-roll interception in front of it.
-                --------------------------------------------------
-
-                local originalScript =
-                    currentScript
-
-                local wrapper
-
-                wrapper =
-                    function(
-                        clickedButton,
-                        mouseButton
-                    )
-                        if LootHooks:
-                            HandleLootClick(
-                                clickedButton,
-                                mouseButton
-                            )
-                        then
-                            return
-                        end
-
-                        if originalScript then
-                            return originalScript(
-                                clickedButton,
-                                mouseButton
-                            )
-                        end
-                    end
-
-                self.buttonWrappers[
-                    button
-                ] =
-                    wrapper
-
-                button:SetScript(
-                    "OnClick",
-                    wrapper
-                )
-
-                installed =
-                    installed + 1
-            end
-        end
-    end
-
-    return installed
-end
+--------------------------------------------------
+-- Installation
+--------------------------------------------------
 
 function LootHooks:Initialize()
     if self.initialized then
@@ -261,16 +220,65 @@ function LootHooks:Initialize()
     self.initialized =
         true
 
-    local installed =
-        self:EnsureHooks()
-
-    if installed == 0 then
+    if not HandleModifiedItemClick then
         AL:Print(
-            "Could not install the live "
-                .. "loot Alt-click hooks.",
+            "Could not hook modified item clicks.",
             1,
             0.4,
             0.2
         )
+
+        return
     end
+
+    if hooksecurefunc then
+        hooksecurefunc(
+            "HandleModifiedItemClick",
+            function(itemLink)
+                local mouseButton =
+                    GetMouseButtonClicked
+                    and GetMouseButtonClicked()
+                    or "LeftButton"
+
+                LootHooks:
+                    HandleModifiedItemClick(
+                        itemLink,
+                        mouseButton
+                    )
+            end
+        )
+
+        return
+    end
+
+    local original =
+        HandleModifiedItemClick
+
+    HandleModifiedItemClick =
+        function(itemLink, ...)
+            if LootHooks:
+                IsLiveRollModifier()
+            then
+                LootHooks:
+                    HandleModifiedItemClick(
+                        itemLink,
+                        "LeftButton"
+                    )
+
+                if AL.Loot
+                    and AL.Loot.isOpen
+                    and LootHooks:
+                        FindLiveLootSlot(
+                            itemLink
+                        )
+                then
+                    return true
+                end
+            end
+
+            return original(
+                itemLink,
+                ...
+            )
+        end
 end
