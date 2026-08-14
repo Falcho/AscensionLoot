@@ -31,6 +31,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if AL.RollSync then
             AL.RollSync:Initialize()
         end
+        if AL.SoftReserveSync then
+            AL.SoftReserveSync:
+                Initialize()
+        end
         if AL.PlayerRollUI then
             AL.PlayerRollUI:Initialize()
         end
@@ -94,6 +98,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 sender
             )
         end
+        if AL.SoftReserveSync then
+            AL.SoftReserveSync:
+                OnAddonMessage(
+                    prefix,
+                    message,
+                    distribution,
+                    sender
+                )
+        end
     elseif event == "UI_ERROR_MESSAGE" then
         local message = ...
         if AL.Loot.pendingAward then
@@ -147,6 +160,10 @@ eventFrame:SetScript(
         end
         if AL.SoftReserve then
             AL.SoftReserve:OnUpdate()
+        end
+        if AL.SoftReserveSync then
+            AL.SoftReserveSync:
+                OnUpdate()
         end
         if AL.Trade then
             AL.Trade:OnUpdate(elapsed)

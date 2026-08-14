@@ -430,7 +430,8 @@ function SR:Validate(data)
     return true
 end
 
-function SR:Import(encoded)
+function SR:Import(encoded, suppressShare)
+    encoded = tostring(encoded or ""):gsub("%s","")
     local decoded, base64Error = AL.Base64.Decode(encoded)
     if not decoded then return false, base64Error end
 
@@ -458,6 +459,23 @@ function SR:Import(encoded)
     end
 
     if AL.UI then AL.UI:RefreshAll() end
+        --------------------------------------------------
+    -- Only Raid Leader / Master Looter imports are
+    -- shared.
+    --
+    -- A synchronized import passes suppressShare=true
+    -- so receivers never echo it back around the raid.
+    --------------------------------------------------
+
+    if not suppressShare
+        and AL.SoftReserveSync
+        and AL.SoftReserveSync.Broadcast
+    then
+        AL.SoftReserveSync:
+            Broadcast(
+                encoded
+            )
+    end
     return true, self:GetSummaryText()
 end
 

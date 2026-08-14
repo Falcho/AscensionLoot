@@ -10,6 +10,7 @@ Base64.lua
 Json.lua
 ItemUtils.lua
 SoftReserve.lua
+SoftReserveSync.lua
 LootSession.lua
 TradeManager.lua
 RollManager.lua
