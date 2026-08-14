@@ -8,25 +8,28 @@ Ascension Loot does **not** include GDKP auctions, gold bidding, pots, cuts, bal
 
 ## Development status
 
-Current public-beta version: **0.6.0**
+Current public-beta version: **0.6.1**
 
-AscensionLoot 0.6.0 is primarily a raid-loot reliability and automation update.
+AscensionLoot 0.6.1 focuses on live Master Loot workflows, Ascension/ElvUI compatibility, loot-session control, and raid-wide soft-reserve synchronization.
+
+### Highlights in 0.6.1
+
+- Master Loot items can now be rolled directly from the live corpse loot window
+- The **Assign all loot to me** option automatically assigns Master-Loot-controlled items to the Master Looter
+- Ordinary below-threshold autoloot remains independently controlled by the Poor, Common, and coin settings
+- Improved Master Loot candidate detection and handout retry handling
+- Improved Bind-on-Pickup confirmation handling for automated Master Loot assignment
+- Live corpse rolls award the actual corpse item instead of older identical bag/session copies
+- ElvUI loot windows now support AscensionLoot live rolls
+- Plain **Alt + Left Click** remains AscensionLoot's live-roll shortcut while **Ctrl + Alt** remains available for Ascension's transmog system
+- Newly Master-Looted items enter the persistent loot session only when the newly received copy has Ascension's temporary raid-trade marker
+- Normal-dungeon nontradeable items no longer pollute the persistent loot queue
+- Added a **Clear Queue** button with confirmation and safe tracking-state reset
+- Raid Leader and Master Looter soft-reserve imports are automatically synchronized to other AscensionLoot users in the raid
+- Raid assistants cannot publish synchronized soft-reserve data
+- Improved automatic trade fallback handling and winner notifications
 
 ### Highlights in 0.6.0
-
-- Direct support for BisBeard's difficulty-specific tier-token soft reserves
-- Improved Master Loot and Group Loot bag reconciliation
-- Physical loot copies are tracked individually
-- Multiple identical drops can select multiple winners from one roll
-- Only raid leaders and assistants may start rolls while in a raid
-- Improved synchronized player roll and tie-break handling
-- Player roll windows close after an accepted roll
-- Ordinary bag items can be rolled without polluting the persistent loot session
-- Raid-trade timer detection is separated from general item tradeability
-- Ordinary tradeable BoEs, recipes and materials can be used by the trade assistant
-- Old soulbound copies remain protected from automatic trading
-- Successfully completed trades automatically advance to the next queued trade
-- Ctrl + Alt bag clicks are ignored by AscensionLoot for compatibility with Ascension's transmog system
 
 Ascension-specific live raid testing is still recommended because the client contains custom server and interface behaviour.
 

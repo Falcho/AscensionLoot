@@ -4,13 +4,13 @@ AscensionLoot is a World of Warcraft 3.3.5a raid-loot addon for Ascension: Conqu
 
 It is built for raids that collect loot on one designated holder and distribute it later using BisBeard soft reserves, structured rolls, persistent loot tracking, and assisted trading.
 
-> **Current version:** 0.6.0
+> **Current version:** 0.6.1
 
 ## Features
 
 - Direct support for BisBeard difficulty-specific tier-token reserves
 - Persistent loot queue across bosses, reloads, and relogs
-- Master Loot and Group Loot workflows
+- Master Loot and Group Loot workflows, including live corpse rolls
 - Raid leader/assistant roll authority
 - SR, MS, and OS roll handling
 - Multiple-copy and duplicate-SR support
@@ -29,6 +29,10 @@ It is built for raids that collect loot on one designated holder and distribute 
 - Improved multiple-copy loot distribution
 - Automatic continuation through queued trades
 - General tradeability detection for ordinary unbound items
+- Automatic Master Loot assignment to yourself when enabled
+- ElvUI-compatible live loot rolls
+- Clear Loot Queue button with confirmation
+- Automatic soft-reserve synchronization from the Raid Leader or Master Looter
 
 ## Roll rules
 
