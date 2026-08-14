@@ -372,36 +372,96 @@ end
 
 function BagHooks:FindUsableLocation(
     bucket,
-    requireTradeable
+    requireTradeable,
+    previousBucket
 )
     if not bucket then
         return nil
     end
 
-    for _, location in ipairs(
-        bucket.slots or {}
-    ) do
-        local tradeable =
-            AL.ItemUtils:
-                HasRaidTradeTimer(
+    --------------------------------------------------
+    -- Record how many copies existed in each physical
+    -- bag slot before this bag delta.
+    --------------------------------------------------
+
+    local previousQuantities =
+        {}
+
+    if previousBucket then
+        for _,
+            location in ipairs(
+                previousBucket.slots
+                or {}
+            )
+        do
+            previousQuantities[
+                bagSlotKey(
                     location.bag,
                     location.slot
                 )
+            ] =
+                tonumber(
+                    location.quantity
+                )
+                or 1
+        end
+    end
 
-        if not requireTradeable
-            or tradeable
-        then
-            local item =
+    for _,
+        location in ipairs(
+            bucket.slots
+            or {}
+        )
+    do
+        local currentQuantity =
+            tonumber(
+                location.quantity
+            )
+            or 1
+
+        local previousQuantity =
+            previousQuantities[
+                bagSlotKey(
+                    location.bag,
+                    location.slot
+                )
+            ]
+            or 0
+
+        --------------------------------------------------
+        -- When comparing against an older snapshot,
+        -- only inspect a slot whose quantity actually
+        -- increased.
+        --------------------------------------------------
+
+        local newlyReceivedHere =
+            not previousBucket
+            or currentQuantity
+                > previousQuantity
+
+        if newlyReceivedHere then
+            local tradeable =
                 AL.ItemUtils:
-                    FromBagSlot(
+                    HasRaidTradeTimer(
                         location.bag,
                         location.slot
                     )
 
-            if item then
-                return item,
-                    location,
-                    tradeable
+            if not requireTradeable
+                or tradeable
+            then
+                local item =
+                    AL.ItemUtils:
+                        FromBagSlot(
+                            location.bag,
+                            location.slot
+                        )
+
+                if item then
+                    return item,
+                        location,
+                        tradeable
+                end
             end
         end
     end
@@ -417,7 +477,8 @@ function BagHooks:RegisterCopiesFromBucket(
     bucket,
     copyCount,
     registrationSource,
-    requireTradeable
+    requireTradeable,
+    previousBucket
 )
     local count =
         tonumber(copyCount)
@@ -432,7 +493,8 @@ function BagHooks:RegisterCopiesFromBucket(
         tradeable =
             self:FindUsableLocation(
                 bucket,
-                requireTradeable
+                requireTradeable,
+                previousBucket
             )
 
     if not item
@@ -522,6 +584,10 @@ function BagHooks:ScanForNewEligibleItems()
         return
     end
 
+    local lootMethod =
+        GetLootMethod
+        and GetLootMethod()
+
     local previousSnapshot =
         self.bagSnapshot
         or {}
@@ -601,7 +667,8 @@ function BagHooks:ScanForNewEligibleItems()
                             currentBucket,
                             expectedFromDelta,
                             "master_loot_bag",
-                            true
+                            true,
+                            previousBucket
                         )
 
                 if added > 0 then
@@ -672,7 +739,8 @@ function BagHooks:ScanForNewEligibleItems()
                                 currentBucket,
                                 remaining,
                                 "bag_update",
-                                true
+                                true,
+                                previousBucket
                             )
 
                     if added > 0 then
@@ -752,8 +820,14 @@ function BagHooks:ScanForNewEligibleItems()
 
             else
                 --------------------------------------------------
-                -- Stop retrying this delta. From this point the
-                -- current bag state becomes the new baseline.
+                -- The item exists in our bags, but no temporary
+                -- raid-trade marker appeared before the eligibility
+                -- window expired.
+                --
+                -- This is NOT a loot failure.
+                --
+                -- It simply means the item must not enter the
+                -- persistent loot session.
                 --------------------------------------------------
 
                 self.retryUntil[
@@ -766,22 +840,16 @@ function BagHooks:ScanForNewEligibleItems()
                 ] =
                     currentBucket
 
-                AL:Print(
-                    "Could not verify a newly received "
-                    .. tostring(
-                        firstDisplayLink
-                        or (
-                            "item #"
-                            .. tostring(
-                                currentBucket.itemID
-                            )
-                        )
+                --------------------------------------------------
+                -- Drop any explicit Master Loot expectation for
+                -- the copies that failed the tradeability check.
+                --------------------------------------------------
+
+                self:
+                    ConsumeMasterLootExpectation(
+                        currentBucket.itemID,
+                        unresolved
                     )
-                    .. " before the tracking retry expired.",
-                    1,
-                    0.5,
-                    0.2
-                )
             end
         else
             self.retryUntil[
@@ -1126,6 +1194,36 @@ function BagHooks:HandleModifiedClick(
         AL.UI:ShowLoot()
     end
 end
+
+--------------------------------------------------
+-- Reset session-tracking state
+--------------------------------------------------
+
+function BagHooks:ResetTrackingState()
+    --------------------------------------------------
+    -- Any old Master Loot expectation could otherwise
+    -- re-add an item immediately after the user clears
+    -- the loot queue.
+    --------------------------------------------------
+
+    self.masterLootExpectations = {}
+    self.retryUntil = {}
+
+    self.scanPending = false
+    self.scanAt = 0
+
+    --------------------------------------------------
+    -- Everything already in the bags becomes the new
+    -- baseline. Nothing currently held should be
+    -- rediscovered as freshly looted.
+    --------------------------------------------------
+
+    self.bagSnapshot =
+        self:BuildBagSnapshot()
+
+    self.snapshotReady = true
+end
+
 --------------------------------------------------
 -- Initialisation
 --------------------------------------------------

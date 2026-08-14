@@ -31,11 +31,19 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if AL.RollSync then
             AL.RollSync:Initialize()
         end
+        if AL.SoftReserveSync then
+            AL.SoftReserveSync:
+                Initialize()
+        end
         if AL.PlayerRollUI then
             AL.PlayerRollUI:Initialize()
         end
         if AL.BagHooks then
             AL.BagHooks:Initialize()
+        end
+        if AL.LootHooks then
+            AL.LootHooks:
+                Initialize()
         end
         if AL.MinimapButton then
             AL.MinimapButton:Initialize()
@@ -90,6 +98,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 sender
             )
         end
+        if AL.SoftReserveSync then
+            AL.SoftReserveSync:
+                OnAddonMessage(
+                    prefix,
+                    message,
+                    distribution,
+                    sender
+                )
+        end
     elseif event == "UI_ERROR_MESSAGE" then
         local message = ...
         if AL.Loot.pendingAward then
@@ -135,11 +152,18 @@ eventFrame:SetScript(
         if AL.Loot then
             AL.Loot:OnUpdate()
         end
+        if AL.LootHooks then
+            AL.LootHooks:OnUpdate()
+        end
         if AL.BagHooks then
             AL.BagHooks:OnUpdate()
         end
         if AL.SoftReserve then
             AL.SoftReserve:OnUpdate()
+        end
+        if AL.SoftReserveSync then
+            AL.SoftReserveSync:
+                OnUpdate()
         end
         if AL.Trade then
             AL.Trade:OnUpdate(elapsed)
@@ -177,7 +201,7 @@ SlashCmdList["ASCENSIONLOOT"] = function(message)
         AL.Loot:LoadDemo()
     elseif command == "trade" then
         if AL.Trade then
-            AL.Trade:TryStart()
+            AL.Trade:TryStart(AL.Trade:GetNextPendingEntry())
         end
     elseif command == "clearhistory" then
         if AL.UI then

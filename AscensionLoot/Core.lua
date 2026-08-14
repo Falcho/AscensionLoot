@@ -31,8 +31,6 @@ local defaults = {
         -- Master Loot
         --------------------------------------------------
 
-        autoCollectTrackedLoot = true,
-
         -- More aggressive automation is disabled for
         -- new public-beta installations.
         autoMasterLootToSelf = false,
@@ -444,6 +442,145 @@ function AL:GetRaidMemberRank(
     return nil
 end
 
+--------------------------------------------------
+-- Soft-reserve synchronization authority
+--------------------------------------------------
+
+function AL:GetMasterLooterName()
+    if not GetLootMethod then
+        return nil
+    end
+
+    local method,
+        partyMaster,
+        raidMaster =
+            GetLootMethod()
+
+    if method ~= "master" then
+        return nil
+    end
+
+    --------------------------------------------------
+    -- WoW 3.3.5 uses 0 for the local player.
+    --------------------------------------------------
+
+    if tonumber(partyMaster) == 0 then
+        return UnitName("player")
+    end
+
+    --------------------------------------------------
+    -- Raid Master Looter.
+    --------------------------------------------------
+
+    if self:IsInRaid() then
+        local raidIndex =
+            tonumber(raidMaster)
+
+        if raidIndex
+            and raidIndex > 0
+        then
+            local raidName =
+                GetRaidRosterInfo(
+                    raidIndex
+                )
+
+            if raidName then
+                return raidName
+            end
+        end
+
+        --------------------------------------------------
+        -- Ascension compatibility fallback.
+        --------------------------------------------------
+
+        local fallbackIndex =
+            tonumber(partyMaster)
+
+        if fallbackIndex
+            and fallbackIndex > 0
+        then
+            local raidName =
+                GetRaidRosterInfo(
+                    fallbackIndex
+                )
+
+            if raidName then
+                return raidName
+            end
+        end
+    end
+
+    --------------------------------------------------
+    -- Party fallback.
+    --------------------------------------------------
+
+    local partyIndex =
+        tonumber(partyMaster)
+
+    if partyIndex
+        and partyIndex > 0
+    then
+        return UnitName(
+            "party"
+                .. tostring(
+                    partyIndex
+                )
+        )
+    end
+
+    return nil
+end
+
+function AL:IsSoftReserveAuthority(
+    playerName
+)
+    --------------------------------------------------
+    -- This feature is explicitly raid-only.
+    --------------------------------------------------
+
+    if not self:IsInRaid() then
+        return false
+    end
+
+    local wanted =
+        self:NormalizeName(
+            playerName
+        )
+
+    if not wanted then
+        return false
+    end
+
+    --------------------------------------------------
+    -- Raid Leader ONLY.
+    --
+    -- Rank:
+    --   0 = member
+    --   1 = assistant
+    --   2 = leader
+    --------------------------------------------------
+
+    if self:GetRaidMemberRank(
+        playerName
+    ) == 2
+    then
+        return true
+    end
+
+    --------------------------------------------------
+    -- Or the current Master Looter.
+    --------------------------------------------------
+
+    local masterLooter =
+        self:GetMasterLooterName()
+
+    return masterLooter
+        and self:NormalizeName(
+            masterLooter
+        ) == wanted
+        or false
+end
+
 function AL:IsRollAuthority(
     playerName
 )
@@ -723,9 +860,19 @@ local function processChatQueue()
 
     local entry = table.remove(chatQueue, 1)
 
-    if entry and entry.text and entry.chatType then
-        SendChatMessage(entry.text, entry.chatType)
-        lastChatSentAt = now
+    if entry
+        and entry.text
+        and entry.chatType
+    then
+        SendChatMessage(
+            entry.text,
+            entry.chatType,
+            nil,
+            entry.target
+        )
+
+        lastChatSentAt =
+            now
     end
 
     if #chatQueue == 0 then
@@ -735,7 +882,7 @@ end
 
 chatFrame:SetScript("OnUpdate", processChatQueue)
 
-function AL:QueueChatMessage(text, chatType)
+function AL:QueueChatMessage(text, chatType, target)
     local safeText = self:SanitizeChatText(text)
 
     if safeText == "" or not chatType then
@@ -746,6 +893,7 @@ function AL:QueueChatMessage(text, chatType)
         table.insert(chatQueue, {
             text = part,
             chatType = chatType,
+            target = target,
         })
     end
 

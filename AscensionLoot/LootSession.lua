@@ -400,10 +400,36 @@ function Session:MarkTraded(entry, recipient)
 end
 
 function Session:Clear()
-    AL.db.lootSession.items = {}
+    AL.db.lootSession.items =
+        AL.db.lootSession.items
+        or {}
+
+    wipe(
+        AL.db.lootSession.items
+    )
+
+    --------------------------------------------------
+    -- Prevent old bag expectations from repopulating
+    -- the freshly cleared queue.
+    --------------------------------------------------
+
+    if AL.BagHooks
+        and AL.BagHooks.ResetTrackingState
+    then
+        AL.BagHooks:
+            ResetTrackingState()
+    end
+
+    --------------------------------------------------
+    -- Winner-level whisper suppression belongs to the
+    -- old session too.
+    --------------------------------------------------
+
+    if AL.Trade then
+        AL.Trade.notifiedWinners = {}
+    end
 
     if AL.UI then
         AL.UI:RefreshAll()
     end
 end
-

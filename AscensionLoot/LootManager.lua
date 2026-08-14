@@ -62,6 +62,19 @@ Loot.autoLooting = false
 Loot.nextAutoAction = 0
 Loot.isOpen = false
 
+--------------------------------------------------
+-- Master Looter handout reliability
+--------------------------------------------------
+
+local MASTER_LOOT_HANDOUT_TIMEOUT =
+    1.5
+
+local MASTER_LOOT_RETRY_DELAY =
+    0.5
+
+local MASTER_LOOT_MAX_ATTEMPTS =
+    3
+
 local function lootSlotItem(slot)
     local icon, name, quantity, quality, locked =
         GetLootSlotInfo(slot)
@@ -107,6 +120,42 @@ function Loot:IsMasterLooter()
     --------------------------------------------------
 
     return lootMaster == 0
+end
+
+function Loot:IsMasterLootControlled(
+    item
+)
+    if not item then
+        return false
+    end
+
+    if not GetLootThreshold then
+        return true
+    end
+
+    local threshold =
+        tonumber(
+            GetLootThreshold()
+        )
+
+    local quality =
+        tonumber(
+            item.quality
+        )
+
+    --------------------------------------------------
+    -- If the client gives us incomplete information,
+    -- preserve the safer Master Looter path.
+    --------------------------------------------------
+
+    if threshold == nil
+        or quality == nil
+    then
+        return true
+    end
+
+    return quality
+        >= threshold
 end
 
 function Loot:GetHolderName()
@@ -167,6 +216,25 @@ function Loot:OnOpened(autoLoot)
 end
 
 function Loot:OnClosed()
+        --------------------------------------------------
+    -- Cancel expectations belonging to actions that
+    -- never successfully left the corpse.
+    --
+    -- Successful actions have already been removed
+    -- from collectionQueue and their BagHooks
+    -- expectations must remain alive long enough for
+    -- bag reconciliation.
+    --------------------------------------------------
+
+    for _, action in ipairs(
+        self.collectionQueue
+        or {}
+    ) do
+        self:
+            CancelCollectionActionExpectation(
+                action
+            )
+    end
     self.isOpen = false
     self.autoLooting = false
 
@@ -192,25 +260,304 @@ function Loot:GetItemBySlot(slot)
     end
 end
 
-function Loot:FindCandidateIndex(slot, playerName)
-    local wanted = AL:NormalizeName(playerName)
-    if not wanted then return nil end
+--------------------------------------------------
+-- Live loot-window item access
+--------------------------------------------------
+
+function Loot:GetLiveItemBySlot(
+    slot
+)
+    if not self.isOpen
+        or not slot
+    then
+        return nil
+    end
+
+    local item =
+        lootSlotItem(
+            slot
+        )
+
+    if not item then
+        return nil
+    end
+
+    item.registrationSource =
+        "live_loot"
+
+    return item
+end
+
+--------------------------------------------------
+-- Reserve a live corpse item for an AscensionLoot
+-- roll instead of automatic collection.
+--------------------------------------------------
+
+function Loot:PrepareLiveRollItem(
+    slot
+)
+    if not self.isOpen then
+        return nil,
+            "The loot window is not open."
+    end
+
+    if not self:IsMasterLooter() then
+        return nil,
+            "You must be the Master Looter "
+            .. "to roll an item directly from "
+            .. "the boss loot window."
+    end
+    if AL.db.settings
+        .autoMasterLootToSelf
+    then
+        return nil,
+            "Live boss-loot rolls are disabled while "
+            .. "\"Assign all loot to me\" is enabled."
+    end
+
+    local item =
+        self:
+            GetLiveItemBySlot(
+                slot
+            )
+
+    if not item then
+        return nil,
+            "The clicked loot item could not "
+            .. "be identified."
+    end
+
+    --------------------------------------------------
+    -- Only items controlled by the Master Looter can
+    -- be distributed to the winner of a live roll.
+    --
+    -- Below-threshold loot cannot use GiveMasterLoot.
+    --------------------------------------------------
+
+    if not self:
+        IsMasterLootControlled(
+            item
+        )
+    then
+        return nil,
+            "This item is below the Master Loot "
+            .. "threshold and cannot be awarded "
+            .. "through an AscensionLoot roll."
+    end
+
+    if self:
+        IsLootSlotLocked(
+            slot
+        )
+    then
+        return nil,
+            "That loot item is currently locked."
+    end
+
+    --------------------------------------------------
+    -- If GiveMasterLoot has already been attempted for
+    -- this exact slot, it is too late to safely turn it
+    -- into a live roll.
+    --------------------------------------------------
+
+    local pending =
+        self.pendingCollection
+        or self.pendingMasterLoot
+
+    if pending
+        and pending.slot == slot
+        and pending.item
+        and tonumber(
+            pending.item.id
+        ) == tonumber(
+            item.id
+        )
+    then
+        return nil,
+            "AscensionLoot has already started "
+            .. "assigning this item."
+    end
+
+    if self.pendingAward
+        and self.pendingAward.slot
+            == slot
+    then
+        return nil,
+            "This item is already being awarded."
+    end
+
+    --------------------------------------------------
+    -- Remove this physical item from the automatic
+    -- Master Looter collection queue.
+    --------------------------------------------------
+
+    for index =
+        #(
+            self.collectionQueue
+            or {}
+        ),
+        1,
+        -1
+    do
+        local action =
+            self.collectionQueue[
+                index
+            ]
+
+        if action
+            and action.item
+            and tonumber(
+                action.item.id
+            ) == tonumber(
+                item.id
+            )
+            and tonumber(
+                action.slot
+            ) == tonumber(
+                slot
+            )
+        then
+            self:
+                CancelCollectionActionExpectation(
+                    action
+                )
+
+            table.remove(
+                self.collectionQueue,
+                index
+            )
+        end
+    end
+
+    --------------------------------------------------
+    -- It may also exist in the ordinary autoloot
+    -- queue. Remove that action as well.
+    --------------------------------------------------
+
+    for index =
+        #(
+            self.autoQueue
+            or {}
+        ),
+        1,
+        -1
+    do
+        local action =
+            self.autoQueue[
+                index
+            ]
+
+        if action
+            and action.kind
+                == "item"
+            and tonumber(
+                action.itemID
+            ) == tonumber(
+                item.id
+            )
+            and tonumber(
+                action.slot
+            ) == tonumber(
+                slot
+            )
+        then
+            table.remove(
+                self.autoQueue,
+                index
+            )
+        end
+    end
+
+    item.liveLootRoll =
+        true
+
+    item.registrationSource =
+        "live_loot_roll"
+
+    return item
+end
+
+function Loot:FindCandidateIndex(
+    slot,
+    playerName
+)
+    local wanted =
+        AL:NormalizeName(
+            playerName
+        )
+
+    if not wanted then
+        return nil
+    end
+
+    if slot then
+        for index = 1, 40 do
+            local candidate =
+                GetMasterLootCandidate(
+                    slot,
+                    index
+                )
+
+            if candidate
+                and AL:NormalizeName(
+                    candidate
+                ) == wanted
+            then
+                return index
+            end
+        end
+    end
 
     for index = 1, 40 do
-        local candidate = GetMasterLootCandidate(slot, index)
-        if not candidate then
-            if index > 1 then break end
-        elseif AL:NormalizeName(candidate) == wanted then
+        local candidate =
+            GetMasterLootCandidate(
+                index
+            )
+
+        if candidate
+            and AL:NormalizeName(
+                candidate
+            ) == wanted
+        then
             return index
         end
     end
+
     return nil
 end
 
-function Loot:ValidateItemSlot(item)
-    if not item or item.demo then return false, "Demo items cannot be awarded." end
-    if not self.isOpen then return false, "The loot window is not open." end
-    if not item.slot then return false, "The item has no active loot slot." end
+function Loot:ValidateItemSlot(
+    item
+)
+    if not item
+        or item.demo
+    then
+        return false,
+            "Demo items cannot be awarded."
+    end
+
+    if not self.isOpen then
+        return false,
+            "The loot window is not open."
+    end
+
+    if not item.slot then
+        return false,
+            "The item has no active loot slot."
+    end
+
+    --------------------------------------------------
+    -- Live loot slots may move while other corpse
+    -- items are collected during a roll.
+    --------------------------------------------------
+
+    if item.source == "loot"
+        and self.FindCurrentItemSlot
+    then
+        local currentSlot = self:FindCurrentItemSlot(item.id, item.slot)
+        if not currentSlot then return false, "That item is no longer available in the loot window." end
+        item.slot = currentSlot
+    end
 
     local currentLink = GetLootSlotLink(item.slot)
     if not currentLink then return false, "That loot slot is no longer available." end
@@ -280,92 +627,22 @@ end
 
 function Loot:OnSlotCleared(slot)
     --------------------------------------------------
-    -- Item collected for later distribution
+    -- Automatic Master Looter handout
     --------------------------------------------------
 
-    if self.pendingCollection
-        and self.pendingCollection.slot
+    local pendingHandout =
+        self.pendingCollection
+        or self.pendingMasterLoot
+
+    if pendingHandout
+        and pendingHandout.slot
             == slot
     then
-        local collection =
-            self.pendingCollection
-
-        self.pendingCollection =
-            nil
-
-        if collection.holderIsPlayer
-            and AL.BagHooks
-            and AL.BagHooks
-                .ExpectMasterLoot
-        then
-            --------------------------------------------------
-            -- Do NOT create the LootSession entry here.
-            --
-            -- LOOT_SLOT_CLEARED only proves that the corpse
-            -- slot was processed. BagHooks will create the
-            -- exact number of entries when the actual bag
-            -- count increases.
-            --------------------------------------------------
-
-            AL:Print(string.format(
-                "Collected %s. Waiting for bag confirmation.",
-                collection.item.link
-                    or collection.item.name
-                    or "tracked item"
-            ))
-
-        else
-            --------------------------------------------------
-            -- A different configured player is the holder.
-            -- We cannot inspect that player's bags from this
-            -- client, so LOOT_SLOT_CLEARED remains the best
-            -- available confirmation.
-            --------------------------------------------------
-
-            local copies =
-                tonumber(
-                    collection.item.quantity
-                )
-                or 1
-
-            AL.LootSession:
-                AddCollectedCopies(
-                    collection.item,
-                    collection.holder,
-                    copies
-                )
-
-            AL:Print(string.format(
-                "Collected %d %s of %s for %s.",
-                copies,
-                copies == 1
-                    and "copy"
-                    or "copies",
-                collection.item.link
-                    or collection.item.name
-                    or "tracked item",
-                collection.holder
-                    or "Unknown"
-            ))
-
-            if AL.db.settings.autoShowLoot
-                and AL.UI
-            then
-                AL.UI:ShowLoot()
-            end
-        end
+        self:
+            CompletePendingHandout(
+                pendingHandout
+            )
     end
-
-    --------------------------------------------------
-    -- Untracked item assigned directly to the holder
-    --------------------------------------------------
-
-    if self.pendingMasterLoot
-        and self.pendingMasterLoot.slot == slot
-    then
-        self.pendingMasterLoot = nil
-    end
-
     --------------------------------------------------
     -- Item awarded directly from the loot window
     --------------------------------------------------
@@ -418,20 +695,36 @@ function Loot:OnBindConfirm(
         self.pendingCollection
         or self.pendingMasterLoot
 
-    if not pending then
+    local awardToSelf =
+        self.pendingAward
+        and self.pendingAward.slot
+            == slot
+        and AL:NormalizeName(
+            self.pendingAward.playerName
+        )
+            == AL:NormalizeName(
+                UnitName("player")
+            )
+
+    if not pending
+        and not awardToSelf
+    then
         return
     end
 
-    if pending.slot ~= slot then
-        return
-    end
+    if pending then
+        if pending.slot ~= slot then
+            return
+        end
 
-    --------------------------------------------------
-    -- Never confirm somebody else's loot warning.
-    --------------------------------------------------
+        --------------------------------------------------
+        -- Never confirm somebody else's automatic
+        -- collection warning.
+        --------------------------------------------------
 
-    if not pending.holderIsPlayer then
-        return
+        if not pending.holderIsPlayer then
+            return
+        end
     end
 
     --------------------------------------------------
@@ -443,11 +736,21 @@ function Loot:OnBindConfirm(
     )
 
     --------------------------------------------------
+    -- Automatic collection uses the B handout timeout.
+    -- Give it a fresh window after confirmation.
+    --------------------------------------------------
+
+    if pending then
+        pending.bindConfirmedAt =
+            GetTime()
+
+        pending.startedAt =
+            GetTime()
+    end
+
+    --------------------------------------------------
     -- UIParent handles the same LOOT_BIND_CONFIRM
-    -- event and may display LOOT_BIND after our event
-    -- handler has already confirmed it.
-    --
-    -- Hide it now and once more on the next frame.
+    -- event and may create LOOT_BIND after us.
     --------------------------------------------------
 
     if StaticPopup_Hide then
@@ -674,6 +977,28 @@ function Loot:AwardActiveWinners(item)
         return
     end
 
+    --------------------------------------------------
+    -- Live boss-loot rolls must always award the
+    -- physical corpse item.
+    --
+    -- Do this BEFORE looking in LootSession. An older
+    -- unassigned copy of the same item may already be
+    -- in our bags and must not steal this assignment.
+    --------------------------------------------------
+
+    if item.source == "loot" then
+        local winner =
+            winners[1]
+
+        self:Award(
+            item,
+            winner.name,
+            winner.categoryLabel
+        )
+
+        return
+    end
+
     local copies = {}
 
     if AL.LootSession
@@ -687,22 +1012,6 @@ function Loot:AwardActiveWinners(item)
     end
 
     if #copies == 0 then
-        --------------------------------------------------
-        -- Live corpse loot can still be awarded through
-        -- the normal Master Loot path.
-        --------------------------------------------------
-
-        if item.source == "loot"
-            and winners[1]
-        then
-            self:Award(
-                item,
-                winners[1].name,
-                winners[1].categoryLabel
-            )
-
-            return
-        end
 
         --------------------------------------------------
         -- An ordinary bag item may have been manually
@@ -846,80 +1155,122 @@ function Loot:BuildCollectionQueue()
         return
     end
 
-    local settings = AL.db.settings
+    --------------------------------------------------
+    -- Binary Master Looter workflow:
+    --
+    -- ON:
+    --   Assign every item to ourselves.
+    --
+    -- OFF:
+    --   Leave every item on the corpse so it can be
+    --   rolled / distributed directly from the live
+    --   loot window.
+    --------------------------------------------------
 
-    local assignEverythingToSelf =
-        settings.autoMasterLootToSelf
-            == true
-
-    local collectTrackedLoot =
-        settings.autoCollectTrackedLoot
-
-    if not assignEverythingToSelf
-        and not collectTrackedLoot
+    if not AL.db.settings
+        .autoMasterLootToSelf
     then
         return
     end
 
-    for slot = GetNumLootItems(), 1, -1 do
+    local holder =
+        UnitName("player")
+
+    for slot =
+        GetNumLootItems(),
+        1,
+        -1
+    do
         local item =
-            lootSlotItem(slot)
+            lootSlotItem(
+                slot
+            )
 
-        if item then
-            local shouldTrack =
-                AL.ItemUtils:ShouldTrack(item)
-
-            local shouldQueue =
-                assignEverythingToSelf
-                or (
-                    collectTrackedLoot
-                    and shouldTrack
+        if item
+            and self:
+                IsMasterLootControlled(
+                    item
                 )
+        then
+            table.insert(
+                self.collectionQueue,
+                {
+                    slot =
+                        slot,
 
-            if shouldQueue then
-                local holder
+                    item =
+                        item,
 
-                if assignEverythingToSelf then
-                    holder = UnitName("player")
-                else
-                    holder = self:GetHolderName()
-                end
+                    holder =
+                        holder,
 
-                table.insert(
-                    self.collectionQueue,
-                    {
-                        slot = slot,
-                        item = item,
-                        holder = holder,
-                        trackInSession = shouldTrack,
-                    }
-                )
-            end
+                    trackInSession =
+                        AL.ItemUtils:
+                            ShouldTrack(
+                                item
+                            ),
+                }
+            )
         end
     end
 end
 
 function Loot:BuildAutoQueue()
     self.autoQueue = {}
+
     self.nextAutoAction =
         GetTime() + 0.25
 
-    local masterLootHandlesAllItems =
-        self:IsMasterLooter()
-        and AL.db.settings.autoMasterLootToSelf
+    local isMasterLooter =
+        self:
+            IsMasterLooter()
 
-    for slot = GetNumLootItems(), 1, -1 do
+    for slot =
+        GetNumLootItems(),
+        1,
+        -1
+    do
         local link =
-            GetLootSlotLink(slot)
+            GetLootSlotLink(
+                slot
+            )
 
         if link then
-            -- During Master Looter auto-loot, every item
-            -- is already handled by collectionQueue.
-            if not masterLootHandlesAllItems then
-                local item =
-                    lootSlotItem(slot)
+            local item =
+                lootSlotItem(
+                    slot
+                )
 
-                if self:ShouldAutoLoot(item) then
+            if item then
+                --------------------------------------------------
+                -- When we are Master Looter, items at/above
+                -- the Master Loot threshold belong exclusively
+                -- to the Master Loot workflow:
+                --
+                -- Assign ON  → collectionQueue
+                -- Assign OFF → remain for live Alt-click rolls
+                --
+                -- Never ordinary-autoloot those items.
+                --------------------------------------------------
+
+                local masterLootControlled =
+                    isMasterLooter
+                    and self:
+                        IsMasterLootControlled(
+                            item
+                        )
+
+                --------------------------------------------------
+                -- Below-threshold items always obey the
+                -- Ordinary Autoloot settings.
+                --------------------------------------------------
+
+                if not masterLootControlled
+                    and self:
+                        ShouldAutoLoot(
+                            item
+                        )
+                then
                     table.insert(
                         self.autoQueue,
                         {
@@ -931,9 +1282,14 @@ function Loot:BuildAutoQueue()
                 end
             end
 
-        elseif AL.db.settings.autoLootCoins then
-            local _, name =
-                GetLootSlotInfo(slot)
+        elseif AL.db.settings
+            .autoLootCoins
+        then
+            local _,
+                name =
+                    GetLootSlotInfo(
+                        slot
+                    )
 
             if name then
                 table.insert(
@@ -1047,6 +1403,373 @@ function Loot:FindCurrentCoinSlot(
     return nil
 end
 
+--------------------------------------------------
+-- Master Looter collection-state helpers
+--------------------------------------------------
+
+function Loot:IsLootSlotLocked(
+    slot
+)
+    if not slot then
+        return true
+    end
+
+    local _,
+        _,
+        _,
+        _,
+        locked =
+            GetLootSlotInfo(
+                slot
+            )
+
+    return locked == true
+        or locked == 1
+end
+
+function Loot:RemoveCollectionAction(
+    action
+)
+    if not action then
+        return false
+    end
+
+    for index,
+        current in ipairs(
+            self.collectionQueue
+            or {}
+        )
+    do
+        if current == action then
+            table.remove(
+                self.collectionQueue,
+                index
+            )
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function Loot:ClearPendingHandout(
+    pending
+)
+    if self.pendingCollection
+        == pending
+    then
+        self.pendingCollection =
+            nil
+    end
+
+    if self.pendingMasterLoot
+        == pending
+    then
+        self.pendingMasterLoot =
+            nil
+    end
+end
+
+function Loot:CancelCollectionActionExpectation(
+    action
+)
+    if not action
+        or not action.expectationCreated
+    then
+        return
+    end
+
+    local holder =
+        action.holder
+        or self:GetHolderName()
+
+    local holderIsPlayer =
+        AL:NormalizeName(
+            holder
+        )
+        == AL:NormalizeName(
+            UnitName("player")
+        )
+
+    if holderIsPlayer
+        and AL.BagHooks
+        and AL.BagHooks
+            .ConsumeMasterLootExpectation
+    then
+        AL.BagHooks:
+            ConsumeMasterLootExpectation(
+                action.item.id,
+                action.item.quantity
+                    or 1
+            )
+    end
+
+    action.expectationCreated =
+        nil
+end
+
+function Loot:CancelCollectionExpectation(
+    pending
+)
+    if not pending
+        or not pending.action
+    then
+        return
+    end
+
+    self:
+        CancelCollectionActionExpectation(
+            pending.action
+        )
+end
+
+function Loot:CompletePendingHandout(
+    pending
+)
+    if not pending then
+        return
+    end
+
+    local action =
+        pending.action
+
+    self:
+        ClearPendingHandout(
+            pending
+        )
+
+    if action then
+        self:
+            RemoveCollectionAction(
+                action
+            )
+    end
+
+    --------------------------------------------------
+    -- Untracked loot needs no LootSession entry.
+    --------------------------------------------------
+
+    if not action
+        or not action.trackInSession
+    then
+        return
+    end
+
+    local copies =
+        tonumber(
+            action.item.quantity
+        )
+        or 1
+
+    copies =
+        math.max(
+            1,
+            math.floor(
+                copies
+            )
+        )
+
+    --------------------------------------------------
+    -- Local holder
+    --
+    -- LOOT_SLOT_CLEARED already proved that the
+    -- handout succeeded.
+    --
+    -- Do NOT add the item to LootSession here.
+    --
+    -- BagHooks owns the separate eligibility check
+    -- and will add it only if the newly received bag
+    -- copy exposes the temporary raid-trade marker.
+    --------------------------------------------------
+
+    if pending.holderIsPlayer then
+        AL:Print(
+            string.format(
+                "Collected %d %s of %s.",
+                copies,
+                copies == 1
+                    and "copy"
+                    or "copies",
+                action.item.link
+                    or action.item.name
+                    or "tracked item"
+            )
+        )
+
+        return
+    end
+
+    --------------------------------------------------
+    -- Remote holder
+    --
+    -- We cannot inspect another player's bags.
+    -- Preserve the existing successful-handout
+    -- behaviour for this legacy path.
+    --------------------------------------------------
+
+    local collectedItem =
+        AL:ShallowCopy(
+            action.item
+        )
+
+    collectedItem.registrationSource =
+        "master_loot_remote"
+
+    AL.LootSession:
+        AddCollectedCopies(
+            collectedItem,
+            pending.holder,
+            copies
+        )
+
+    if AL.db.settings.autoShowLoot
+        and AL.UI
+    then
+        AL.UI:ShowLoot()
+    end
+end
+
+function Loot:CheckPendingHandoutTimeout()
+    local pending =
+        self.pendingCollection
+        or self.pendingMasterLoot
+
+    if not pending
+        or not pending.startedAt
+    then
+        return
+    end
+
+    --------------------------------------------------
+    -- If manual BoP confirmation is required, don't
+    -- repeatedly call GiveMasterLoot while the user
+    -- is still looking at the confirmation popup.
+    --------------------------------------------------
+
+    if AL.db.settings
+            .autoConfirmMasterLootToSelf
+            == false
+        and StaticPopup_Visible
+        and StaticPopup_Visible(
+            "LOOT_BIND"
+        )
+    then
+        return
+    end
+
+    if GetTime()
+        - pending.startedAt
+        < MASTER_LOOT_HANDOUT_TIMEOUT
+    then
+        return
+    end
+
+    local currentLink =
+        GetLootSlotLink(
+            pending.slot
+        )
+
+    local slotStillContainsItem =
+        currentLink
+        and tonumber(
+            AL:GetItemID(
+                currentLink
+            )
+        )
+            == tonumber(
+                pending.item.id
+            )
+
+    --------------------------------------------------
+    -- The slot disappeared even though we never saw
+    -- LOOT_SLOT_CLEARED.
+    --
+    -- Treat that as success rather than handing out a
+    -- second copy.
+    --------------------------------------------------
+
+    if not slotStillContainsItem then
+        self:
+            CompletePendingHandout(
+                pending
+            )
+
+        self:Refresh()
+
+        return
+    end
+
+    local action =
+        pending.action
+
+    local attempts =
+        action
+        and tonumber(
+            action.attempts
+        )
+        or 0
+
+    --------------------------------------------------
+    -- Give the client another opportunity.
+    --------------------------------------------------
+
+    if action
+        and attempts
+            < MASTER_LOOT_MAX_ATTEMPTS
+    then
+        self:
+            ClearPendingHandout(
+                pending
+            )
+
+        action.nextAttemptAt =
+            GetTime()
+            + MASTER_LOOT_RETRY_DELAY
+
+        return
+    end
+
+    --------------------------------------------------
+    -- Repeated silent failure. Leave the item on the
+    -- corpse for manual handling rather than creating
+    -- an infinite GiveMasterLoot loop.
+    --------------------------------------------------
+
+    self:
+        ClearPendingHandout(
+            pending
+        )
+
+    self:
+        CancelCollectionExpectation(
+            pending
+        )
+
+    self:
+        RemoveCollectionAction(
+            action
+        )
+
+    AL:Print(
+        "Could not automatically assign "
+            .. tostring(
+                pending.item.link
+                or pending.item.name
+                or "the item"
+            )
+            .. " after "
+            .. tostring(
+                MASTER_LOOT_MAX_ATTEMPTS
+            )
+            .. " attempts. "
+            .. "Please handle it manually.",
+        1,
+        0.3,
+        0.3
+    )
+end
+
 function Loot:ProcessAutoQueue()
     if not self.isOpen then
         return
@@ -1090,6 +1813,18 @@ function Loot:ProcessAutoQueue()
         local action =
             self.collectionQueue[1]
 
+        --------------------------------------------------
+        -- A previous attempt may have asked us to wait
+        -- briefly before trying again.
+        --------------------------------------------------
+
+        if action.nextAttemptAt
+            and GetTime()
+                < action.nextAttemptAt
+        then
+            return
+        end
+
         local currentSlot =
             self:
                 FindCurrentItemSlot(
@@ -1098,19 +1833,102 @@ function Loot:ProcessAutoQueue()
                 )
 
         if not currentSlot then
-            table.remove(
-                self.collectionQueue,
-                1
-            )
+            local previousAttempts =
+                tonumber(
+                    action.attempts
+                )
+                or 0
+
+            --------------------------------------------------
+            -- Below-threshold loot may already have been
+            -- consumed by WoW's own autoloot system.
+            --------------------------------------------------
+
+            if previousAttempts == 0
+                and not self:
+                    IsMasterLootControlled(
+                        action.item
+                    )
+            then
+                self:
+                    CancelCollectionActionExpectation(
+                        action
+                    )
+
+                self:
+                    RemoveCollectionAction(
+                        action
+                    )
+
+                return
+            end
+
+            --------------------------------------------------
+            -- If we already attempted GiveMasterLoot, the
+            -- disappearing slot most likely means that the
+            -- previous handout completed late.
+            --------------------------------------------------
+
+            if previousAttempts > 0 then
+                local holder =
+                    action.holder
+                    or self:GetHolderName()
+
+                local lateSuccess = {
+                    action =
+                        action,
+
+                    slot =
+                        action.slot,
+
+                    item =
+                        action.item,
+
+                    holder =
+                        holder,
+
+                    holderIsPlayer =
+                        AL:NormalizeName(
+                            holder
+                        )
+                        == AL:NormalizeName(
+                            UnitName("player")
+                        ),
+                }
+
+                self:
+                    CompletePendingHandout(
+                        lateSuccess
+                    )
+
+                self:Refresh()
+
+                return
+            end
+
+            --------------------------------------------------
+            -- No GiveMasterLoot attempt was ever made.
+            -- Something else removed the item.
+            --------------------------------------------------
+
+            self:
+                CancelCollectionActionExpectation(
+                    action
+                )
+
+            self:
+                RemoveCollectionAction(
+                    action
+                )
 
             AL:Print(
                 "Could not find "
-                .. tostring(
-                    action.item.link
-                    or action.item.name
-                    or "tracked item"
-                )
-                .. " on the current corpse.",
+                    .. tostring(
+                        action.item.link
+                        or action.item.name
+                        or "tracked item"
+                    )
+                    .. " on the current corpse.",
                 1,
                 0.4,
                 0.2
@@ -1119,49 +1937,28 @@ function Loot:ProcessAutoQueue()
             return
         end
 
-        --------------------------------------------------
-        -- We have successfully resolved this action, so
-        -- remove it from the queue.
-        --------------------------------------------------
-
-        table.remove(
-            self.collectionQueue,
-            1
-        )
-
         action.slot =
             currentSlot
 
         action.item.slot =
             currentSlot
 
+        --------------------------------------------------
+        -- Gargul's important lesson:
+        --
+        -- Never attempt to distribute a locked loot slot.
+        --------------------------------------------------
+
+        if self:
+            IsLootSlotLocked(
+                currentSlot
+            )
+        then
+            return
+        end
         local holder =
             action.holder
             or self:GetHolderName()
-
-        local candidateIndex =
-            self:
-                FindCandidateIndex(
-                    currentSlot,
-                    holder
-                )
-
-        if not candidateIndex then
-            AL:Print(
-                tostring(holder)
-                .. " is not eligible to receive "
-                .. tostring(
-                    action.item.link
-                    or action.item.name
-                )
-                .. ".",
-                1,
-                0.3,
-                0.3
-            )
-
-            return
-        end
 
         local holderIsPlayer =
             AL:NormalizeName(
@@ -1171,16 +1968,127 @@ function Loot:ProcessAutoQueue()
                 UnitName("player")
             )
 
+        local useMasterLoot =
+            self:
+                IsMasterLootControlled(
+                    action.item
+                )
+
+        local candidateIndex =
+            nil
+
         --------------------------------------------------
-        -- Tell BagHooks what we expect BEFORE calling
-        -- GiveMasterLoot().
+        -- Items at or above the loot threshold must use
+        -- the Master Looter candidate system.
+        --------------------------------------------------
+
+        if useMasterLoot then
+            candidateIndex =
+                self:
+                    FindCandidateIndex(
+                        currentSlot,
+                        holder
+                    )
+
+            --------------------------------------------------
+            -- Candidate data may not be populated immediately.
+            --------------------------------------------------
+
+            if not candidateIndex then
+                action.candidateMisses =
+                    (
+                        action.candidateMisses
+                        or 0
+                    )
+                    + 1
+
+                if action.candidateMisses
+                    >= 6
+                then
+                    self:
+                        CancelCollectionActionExpectation(
+                            action
+                        )
+
+                    self:
+                        RemoveCollectionAction(
+                            action
+                        )
+
+                    AL:Print(
+                        tostring(holder)
+                            .. " did not become eligible to receive "
+                            .. tostring(
+                                action.item.link
+                                or action.item.name
+                            )
+                            .. ". Please handle it manually.",
+                        1,
+                        0.3,
+                        0.3
+                    )
+
+                    return
+                end
+
+                action.nextAttemptAt =
+                    GetTime()
+                    + MASTER_LOOT_RETRY_DELAY
+
+                return
+            end
+
+            action.candidateMisses =
+                nil
+
+        --------------------------------------------------
+        -- Items BELOW the Master Looter threshold are
+        -- ordinary loot. They cannot be GiveMasterLoot'ed.
+        --------------------------------------------------
+
+        elseif not holderIsPlayer then
+            --------------------------------------------------
+            -- Ordinary below-threshold loot cannot be directly
+            -- assigned to another configured loot holder.
+            --------------------------------------------------
+
+            self:
+                CancelCollectionActionExpectation(
+                    action
+                )
+
+            self:
+                RemoveCollectionAction(
+                    action
+                )
+
+            AL:Print(
+                tostring(
+                    action.item.link
+                    or action.item.name
+                    or "The item"
+                )
+                    .. " is below the Master Looter threshold "
+                    .. "and cannot be directly assigned to "
+                    .. tostring(holder)
+                    .. ".",
+                1,
+                0.5,
+                0.2
+            )
+
+            return
+        end
+
+        --------------------------------------------------
+        -- Session eligibility check
         --------------------------------------------------
 
         if action.trackInSession
             and holderIsPlayer
+            and not action.expectationCreated
             and AL.BagHooks
-            and AL.BagHooks
-                .ExpectMasterLoot
+            and AL.BagHooks.ExpectMasterLoot
         then
             AL.BagHooks:
                 ExpectMasterLoot(
@@ -1188,45 +2096,77 @@ function Loot:ProcessAutoQueue()
                     action.item.quantity
                         or 1
                 )
+
+            action.expectationCreated =
+                true
         end
+
+        action.attempts =
+            (
+                action.attempts
+                or 0
+            )
+            + 1
+
+        action.nextAttemptAt =
+            nil
+
+        local pending = {
+            action =
+                action,
+
+            slot =
+                currentSlot,
+
+            item =
+                action.item,
+
+            holder =
+                holder,
+
+            holderIsPlayer =
+                holderIsPlayer,
+
+            startedAt =
+                GetTime(),
+        }
 
         if action.trackInSession then
-            self.pendingCollection = {
-                slot =
-                    currentSlot,
-
-                item =
-                    action.item,
-
-                holder =
-                    holder,
-
-                holderIsPlayer =
-                    holderIsPlayer,
-            }
+            self.pendingCollection =
+                pending
         else
-            self.pendingMasterLoot = {
-                slot =
-                    currentSlot,
-
-                itemID =
-                    action.item.id,
-
-                itemLink =
-                    action.item.link,
-
-                holder =
-                    holder,
-
-                holderIsPlayer =
-                    holderIsPlayer,
-            }
+            self.pendingMasterLoot =
+                pending
         end
 
-        GiveMasterLoot(
-            currentSlot,
-            candidateIndex
-        )
+        --------------------------------------------------
+        -- Use the correct WoW mechanism.
+        --------------------------------------------------
+
+        if useMasterLoot then
+            GiveMasterLoot(
+                currentSlot,
+                candidateIndex
+            )
+        else
+            LootSlot(
+                currentSlot
+            )
+
+            --------------------------------------------------
+            -- Gargul uses the same approach for ordinary
+            -- below-threshold loot.
+            --------------------------------------------------
+
+            if AL.db.settings
+                    .autoConfirmMasterLootToSelf
+                and ConfirmLootSlot
+            then
+                ConfirmLootSlot(
+                    currentSlot
+                )
+            end
+        end
 
         return
     end
@@ -1261,62 +2201,22 @@ function Loot:ProcessAutoQueue()
         return
     end
 
+    LootSlot(
+        currentSlot
+    )
     --------------------------------------------------
-    -- Item slots are resolved again because earlier
-    -- Master Loot operations may have changed the
-    -- corpse state.
+    -- Below-threshold BoP loot may still require a
+    -- normal confirmation on this client.
     --------------------------------------------------
 
-    local currentSlot =
-        self:
-            FindCurrentItemSlot(
-                action.itemID,
-                action.slot
-            )
-
-    if not currentSlot then
-        return
-    end
-
-    local currentItem =
-        lootSlotItem(
-            currentSlot
-        )
-
-    if not self:
-        ShouldAutoLoot(
-            currentItem
-        )
+    if GetLootMethod()
+            == "master"
+        and self:IsMasterLooter()
+        and AL.db.settings
+            .autoConfirmMasterLootToSelf
+        and ConfirmLootSlot
     then
-        return
-    end
-
-    local method =
-        GetLootMethod()
-
-    if method == "master" then
-        if not self:IsMasterLooter() then
-            return
-        end
-
-        local me =
-            UnitName("player")
-
-        local candidateIndex =
-            self:
-                FindCandidateIndex(
-                    currentSlot,
-                    me
-                )
-
-        if candidateIndex then
-            GiveMasterLoot(
-                currentSlot,
-                candidateIndex
-            )
-        end
-    else
-        LootSlot(
+        ConfirmLootSlot(
             currentSlot
         )
     end
@@ -1338,7 +2238,7 @@ function Loot:OnUpdate()
             )
         end
     end
-
+    self:CheckPendingHandoutTimeout()
     self:ProcessAutoQueue()
 end
 
