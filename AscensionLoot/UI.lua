@@ -66,6 +66,143 @@ StaticPopupDialogs[
     preferredIndex = 3,
 }
 
+StaticPopupDialogs[
+    "ASCENSIONLOOT_CLEAR_LOOT_QUEUE"
+] = {
+    text =
+        "Clear the current loot queue?\n\n"
+        .. "This removes %s tracked loot entries. "
+        .. "Loot history, soft reserves, settings "
+        .. "and items in your bags are not affected.",
+
+    button1 = "Clear Queue",
+    button2 = CANCEL,
+
+    OnAccept = function()
+        if not AL.LootSession then
+            return
+        end
+
+        local items =
+            AL.LootSession:GetItems()
+            or {}
+
+        local removed =
+            #items
+
+        AL.LootSession:Clear()
+
+        AL:Print(
+            string.format(
+                "Cleared %d loot queue %s.",
+                removed,
+                removed == 1
+                    and "entry"
+                    or "entries"
+            )
+        )
+    end,
+
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+    preferredIndex = 3,
+}
+
+function UI:ShowClearLootQueueConfirmation()
+    --------------------------------------------------
+    -- Don't invalidate references belonging to an
+    -- active roll.
+    --------------------------------------------------
+
+    if AL.Roll
+        and AL.Roll.active
+    then
+        AL:Print(
+            "Finish or cancel the active roll "
+                .. "before clearing the loot queue.",
+            1,
+            0.5,
+            0.2
+        )
+
+        return
+    end
+
+    --------------------------------------------------
+    -- Don't clear entries while TradeManager still
+    -- owns references to them.
+    --------------------------------------------------
+
+    local tradeBusy =
+        (
+            AL.Trade
+            and (
+                AL.Trade.tradeOpen
+                or AL.Trade.requestedEntry
+            )
+        )
+        or (
+            TradeFrame
+            and TradeFrame:IsShown()
+        )
+
+    if tradeBusy then
+        AL:Print(
+            "Finish or close the current trade "
+                .. "before clearing the loot queue.",
+            1,
+            0.5,
+            0.2
+        )
+
+        return
+    end
+
+    --------------------------------------------------
+    -- GiveMasterLoot may still be in flight.
+    --------------------------------------------------
+
+    if AL.Loot
+        and (
+            AL.Loot.pendingCollection
+            or AL.Loot.pendingMasterLoot
+            or AL.Loot.pendingAward
+        )
+    then
+        AL:Print(
+            "Wait for the current loot assignment "
+                .. "to finish before clearing the queue.",
+            1,
+            0.5,
+            0.2
+        )
+
+        return
+    end
+
+    local items =
+        AL.LootSession
+        and AL.LootSession:GetItems()
+        or {}
+
+    local count =
+        #items
+
+    if count == 0 then
+        AL:Print(
+            "The loot queue is already empty."
+        )
+
+        return
+    end
+
+    StaticPopup_Show(
+        "ASCENSIONLOOT_CLEAR_LOOT_QUEUE",
+        tostring(count)
+    )
+end
+
 local function createCheckbox(
     parent,
     label,
@@ -530,6 +667,33 @@ function UI:CreateLootFrame()
     settingsButton:SetScript("OnClick", function()
         UI:ShowSettings("settings")
     end)
+
+    local clearQueueButton =
+        createButton(
+            frame,
+            "Clear Queue",
+            95,
+            24
+        )
+
+    clearQueueButton:SetPoint(
+        "RIGHT",
+        settingsButton,
+        "LEFT",
+        -8,
+        0
+    )
+
+    clearQueueButton:SetScript(
+        "OnClick",
+        function()
+            UI:
+                ShowClearLootQueueConfirmation()
+        end
+    )
+
+    self.clearQueueButton =
+        clearQueueButton
 
     local panel = CreateFrame("Frame", nil, frame)
 

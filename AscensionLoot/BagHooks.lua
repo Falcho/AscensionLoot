@@ -1194,6 +1194,36 @@ function BagHooks:HandleModifiedClick(
         AL.UI:ShowLoot()
     end
 end
+
+--------------------------------------------------
+-- Reset session-tracking state
+--------------------------------------------------
+
+function BagHooks:ResetTrackingState()
+    --------------------------------------------------
+    -- Any old Master Loot expectation could otherwise
+    -- re-add an item immediately after the user clears
+    -- the loot queue.
+    --------------------------------------------------
+
+    self.masterLootExpectations = {}
+    self.retryUntil = {}
+
+    self.scanPending = false
+    self.scanAt = 0
+
+    --------------------------------------------------
+    -- Everything already in the bags becomes the new
+    -- baseline. Nothing currently held should be
+    -- rediscovered as freshly looted.
+    --------------------------------------------------
+
+    self.bagSnapshot =
+        self:BuildBagSnapshot()
+
+    self.snapshotReady = true
+end
+
 --------------------------------------------------
 -- Initialisation
 --------------------------------------------------
