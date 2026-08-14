@@ -1547,8 +1547,7 @@ function Loot:CompletePendingHandout(
     end
 
     --------------------------------------------------
-    -- Untracked auto-loot requires no LootSession
-    -- entry. Successful slot clearing is enough.
+    -- Untracked loot needs no LootSession entry.
     --------------------------------------------------
 
     if not action
@@ -1571,22 +1570,18 @@ function Loot:CompletePendingHandout(
             )
         )
 
-    local collectedItem =
-        AL:ShallowCopy(
-            action.item
-        )
-
-    collectedItem.registrationSource =
-        pending.holderIsPlayer
-        and "master_loot_self"
-        or "master_loot_remote"
-
-    AL.LootSession:
-        AddCollectedCopies(
-            collectedItem,
-            pending.holder,
-            copies
-        )
+    --------------------------------------------------
+    -- Local holder
+    --
+    -- LOOT_SLOT_CLEARED already proved that the
+    -- handout succeeded.
+    --
+    -- Do NOT add the item to LootSession here.
+    --
+    -- BagHooks owns the separate eligibility check
+    -- and will add it only if the newly received bag
+    -- copy exposes the temporary raid-trade marker.
+    --------------------------------------------------
 
     if pending.holderIsPlayer then
         AL:Print(
@@ -1601,22 +1596,32 @@ function Loot:CompletePendingHandout(
                     or "tracked item"
             )
         )
-    else
-        AL:Print(
-            string.format(
-                "Collected %d %s of %s for %s.",
-                copies,
-                copies == 1
-                    and "copy"
-                    or "copies",
-                action.item.link
-                    or action.item.name
-                    or "tracked item",
-                pending.holder
-                    or "Unknown"
-            )
-        )
+
+        return
     end
+
+    --------------------------------------------------
+    -- Remote holder
+    --
+    -- We cannot inspect another player's bags.
+    -- Preserve the existing successful-handout
+    -- behaviour for this legacy path.
+    --------------------------------------------------
+
+    local collectedItem =
+        AL:ShallowCopy(
+            action.item
+        )
+
+    collectedItem.registrationSource =
+        "master_loot_remote"
+
+    AL.LootSession:
+        AddCollectedCopies(
+            collectedItem,
+            pending.holder,
+            copies
+        )
 
     if AL.db.settings.autoShowLoot
         and AL.UI
@@ -2073,6 +2078,27 @@ function Loot:ProcessAutoQueue()
             )
 
             return
+        end
+
+        --------------------------------------------------
+        -- Session eligibility check
+        --------------------------------------------------
+
+        if action.trackInSession
+            and holderIsPlayer
+            and not action.expectationCreated
+            and AL.BagHooks
+            and AL.BagHooks.ExpectMasterLoot
+        then
+            AL.BagHooks:
+                ExpectMasterLoot(
+                    action.item,
+                    action.item.quantity
+                        or 1
+                )
+
+            action.expectationCreated =
+                true
         end
 
         action.attempts =
