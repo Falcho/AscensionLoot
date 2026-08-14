@@ -327,6 +327,24 @@ function Loot:PrepareLiveRollItem(
             .. "be identified."
     end
 
+    --------------------------------------------------
+    -- Only items controlled by the Master Looter can
+    -- be distributed to the winner of a live roll.
+    --
+    -- Below-threshold loot cannot use GiveMasterLoot.
+    --------------------------------------------------
+
+    if not self:
+        IsMasterLootControlled(
+            item
+        )
+    then
+        return nil,
+            "This item is below the Master Loot "
+            .. "threshold and cannot be awarded "
+            .. "through an AscensionLoot roll."
+    end
+
     if self:
         IsLootSlotLocked(
             slot

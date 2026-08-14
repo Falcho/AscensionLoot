@@ -2259,7 +2259,7 @@ function UI:CreateSettingsPanel(panel)
         "autoMasterLootToSelf",
         18,
         -143,
-        "When you are the Master Looter, automatically assigns all Master-Looter-controlled loot directly to you."
+        "When enabled as Master Looter, AscensionLoot immediately collects all item loot to you. When disabled, items remain in the boss loot window so Master-Loot-controlled items can be Alt-clicked for rolls."
     )
 
     addCheckbox(
