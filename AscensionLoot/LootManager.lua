@@ -1527,75 +1527,6 @@ function Loot:CompletePendingHandout(
     then
         return
     end
-
-    --------------------------------------------------
-    -- Local holder:
-    --
-    -- BagHooks owns the physical confirmation. Do not
-    -- create a LootSession entry merely because the
-    -- corpse slot disappeared.
-    --------------------------------------------------
-
-    if pending.holderIsPlayer
-        and AL.BagHooks
-        and AL.BagHooks
-            .ExpectMasterLoot
-    then
-        AL:Print(
-            string.format(
-                "Collected %s. "
-                    .. "Waiting for bag confirmation.",
-                action.item.link
-                    or action.item.name
-                    or "tracked item"
-            )
-        )
-
-        return
-    end
-
-    --------------------------------------------------
-    -- Remote configured holder:
-    --
-    -- We cannot inspect their bags, so successful
-    -- Master Loot slot clearing remains our best
-    -- confirmation.
-    --------------------------------------------------
-
-    local copies =
-        tonumber(
-            action.item.quantity
-        )
-        or 1
-
-    AL.LootSession:
-        AddCollectedCopies(
-            action.item,
-            pending.holder,
-            copies
-        )
-
-    AL:Print(
-        string.format(
-            "Collected %d %s of %s for %s.",
-            copies,
-            copies == 1
-                and "copy"
-                or "copies",
-            action.item.link
-                or action.item.name
-                or "tracked item",
-            pending.holder
-                or "Unknown"
-        )
-    )
-
-    if AL.db.settings
-            .autoShowLoot
-        and AL.UI
-    then
-        AL.UI:ShowLoot()
-    end
 end
 
 function Loot:CheckPendingHandoutTimeout()
@@ -2046,28 +1977,6 @@ function Loot:ProcessAutoQueue()
             )
 
             return
-        end
-
-        --------------------------------------------------
-        -- Create the bag expectation ONCE.
-        --------------------------------------------------
-
-        if action.trackInSession
-            and holderIsPlayer
-            and not action.expectationCreated
-            and AL.BagHooks
-            and AL.BagHooks
-                .ExpectMasterLoot
-        then
-            AL.BagHooks:
-                ExpectMasterLoot(
-                    action.item,
-                    action.item.quantity
-                        or 1
-                )
-
-            action.expectationCreated =
-                true
         end
 
         action.attempts =

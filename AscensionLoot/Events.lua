@@ -139,6 +139,9 @@ eventFrame:SetScript(
         if AL.Loot then
             AL.Loot:OnUpdate()
         end
+        if AL.LootHooks then
+            AL.LootHooks:OnUpdate()
+        end
         if AL.BagHooks then
             AL.BagHooks:OnUpdate()
         end

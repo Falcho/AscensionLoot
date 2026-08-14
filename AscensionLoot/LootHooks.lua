@@ -10,6 +10,9 @@ local LootHooks =
 LootHooks.initialized =
     false
 
+LootHooks.elvHookedButtons =
+    LootHooks.elvHookedButtons
+    or {}
 --------------------------------------------------
 -- Modifier detection
 --------------------------------------------------
@@ -112,56 +115,63 @@ function LootHooks:FindLiveLootSlot(
 end
 
 --------------------------------------------------
--- Global modified-item click handler
+-- Start a live roll from a known corpse slot
 --------------------------------------------------
 
-function LootHooks:HandleModifiedItemClick(
-    itemLink,
+function LootHooks:HandleLiveLootSlot(
+    slot,
     mouseButton
 )
     if not self:
         IsLiveRollModifier()
     then
-        return
+        return false
     end
 
     if mouseButton
         and mouseButton
             ~= "LeftButton"
     then
-        return
+        return false
     end
-
-    --------------------------------------------------
-    -- Only turn this into a live boss-loot roll while
-    -- an actual loot window is open.
-    --
-    -- BagHooks continues to own ordinary bag items.
-    --------------------------------------------------
 
     if not AL.Loot
         or not AL.Loot.isOpen
+        or not slot
     then
-        return
+        return false
     end
 
-    local slot =
-        self:
-            FindLiveLootSlot(
-                itemLink
-            )
-
-    if not slot then
-        return
+    if not GetLootSlotLink(
+        slot
+    )
+    then
+        return false
     end
 
     --------------------------------------------------
-    -- Never overwrite an active roll.
+    -- If another hook already started THIS exact
+    -- live roll, silently treat the click as handled.
     --------------------------------------------------
 
     if AL.Roll
         and AL.Roll.active
     then
+        local activeItem =
+            AL.Roll.active.item
+
+        if activeItem
+            and activeItem.source
+                == "loot"
+            and tonumber(
+                activeItem.slot
+            ) == tonumber(
+                slot
+            )
+        then
+            return true
+        end
+
         AL:Print(
             "Finish or cancel the current roll "
                 .. "before starting another one.",
@@ -170,7 +180,7 @@ function LootHooks:HandleModifiedItemClick(
             0.2
         )
 
-        return
+        return true
     end
 
     local item,
@@ -190,7 +200,7 @@ function LootHooks:HandleModifiedItemClick(
             0.2
         )
 
-        return
+        return true
     end
 
     local started =
@@ -200,11 +210,130 @@ function LootHooks:HandleModifiedItemClick(
             )
 
     if not started then
-        return
+        return true
     end
 
     if AL.UI then
         AL.UI:ShowLoot()
+    end
+
+    return true
+end
+
+--------------------------------------------------
+-- Global modified-item click handler
+--------------------------------------------------
+function LootHooks:HandleModifiedItemClick(
+    itemLink,
+    mouseButton
+)
+    if not self:
+        IsLiveRollModifier()
+    then
+        return false
+    end
+
+    if mouseButton
+        and mouseButton
+            ~= "LeftButton"
+    then
+        return false
+    end
+
+    if not AL.Loot
+        or not AL.Loot.isOpen
+    then
+        return false
+    end
+
+    local slot =
+        self:
+            FindLiveLootSlot(
+                itemLink
+            )
+
+    if not slot then
+        return false
+    end
+
+    return self:
+        HandleLiveLootSlot(
+            slot,
+            mouseButton
+        )
+end
+
+--------------------------------------------------
+-- Ascension ElvUI loot-frame compatibility
+--------------------------------------------------
+function LootHooks:OnUpdate()
+    if not AL.Loot
+        or not AL.Loot.isOpen
+    then
+        return
+    end
+
+    self:
+        HookElvUILootSlots()
+end
+
+function LootHooks:HookElvUILootSlots()
+    if not AL.Loot
+        or not AL.Loot.isOpen
+    then
+        return
+    end
+
+    local slotCount =
+        GetNumLootItems()
+        or 0
+
+    for index = 1,
+        slotCount
+    do
+        local button =
+            _G[
+                "ElvLootSlot"
+                .. tostring(index)
+            ]
+
+        if button
+            and button.HookScript
+            and not self
+                .elvHookedButtons[
+                    button
+                ]
+        then
+            --------------------------------------------------
+            -- ElvUI's custom loot frame stores the actual
+            -- corpse loot slot in the button's frame ID.
+            --------------------------------------------------
+
+            button:HookScript(
+                "OnClick",
+                function(
+                    clickedButton,
+                    mouseButton
+                )
+                    LootHooks:
+                        HandleLiveLootSlot(
+                            clickedButton:
+                                GetID(),
+                            mouseButton
+                                or (
+                                    GetMouseButtonClicked
+                                    and GetMouseButtonClicked()
+                                )
+                                or "LeftButton"
+                        )
+                end
+            )
+
+            self.elvHookedButtons[
+                button
+            ] =
+                true
+        end
     end
 end
 
